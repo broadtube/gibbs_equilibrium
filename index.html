@@ -1,0 +1,807 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Gibbs Equilibrium Calculator</title>
+<script src="https://cdn.plot.ly/plotly-2.35.2.min.js" charset="utf-8"></script>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: "Segoe UI", system-ui, sans-serif; background: #f5f7fa; color: #333; padding: 20px; }
+h1 { text-align: center; margin-bottom: 8px; font-size: 1.5em; }
+.subtitle { text-align: center; color: #666; margin-bottom: 20px; font-size: 0.9em; }
+.container { max-width: 900px; margin: 0 auto; }
+.card { background: #fff; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); padding: 20px; margin-bottom: 16px; }
+.card h2 { font-size: 1.1em; margin-bottom: 12px; color: #2c3e50; border-bottom: 2px solid #3498db; padding-bottom: 6px; }
+.conditions { display: flex; gap: 16px; flex-wrap: wrap; align-items: end; }
+.conditions label { display: block; font-size: 0.85em; color: #555; margin-bottom: 4px; }
+.conditions input, .conditions select { padding: 8px 12px; border: 1px solid #ccc; border-radius: 4px; font-size: 1em; width: 120px; }
+.species-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 8px; }
+.species-row { display: flex; align-items: center; gap: 8px; padding: 4px 8px; border-radius: 4px; background: #f8f9fa; }
+.species-row.active { background: #e8f4fd; }
+.species-row input[type="checkbox"] { flex-shrink: 0; }
+.species-row .sp-name { font-weight: 600; width: 90px; font-size: 0.9em; }
+.species-row input[type="number"] { width: 70px; padding: 4px 6px; border: 1px solid #ccc; border-radius: 3px; font-size: 0.9em; }
+.species-row input[type="number"]:disabled { background: #eee; color: #999; }
+button#calc { display: block; margin: 0 auto; padding: 12px 40px; background: #3498db; color: #fff; border: none; border-radius: 6px; font-size: 1.1em; cursor: pointer; transition: background 0.2s; }
+button#calc:hover { background: #2980b9; }
+button#calc:disabled { background: #bdc3c7; cursor: not-allowed; }
+table { width: 100%; border-collapse: collapse; font-size: 0.9em; }
+th, td { padding: 8px 12px; text-align: right; border-bottom: 1px solid #eee; }
+th { background: #f8f9fa; font-weight: 600; color: #555; }
+td:first-child, th:first-child { text-align: left; }
+tr.total { font-weight: 700; border-top: 2px solid #333; }
+tr.zero td { color: #bbb; }
+#error { color: #e74c3c; padding: 12px; background: #fde8e8; border-radius: 4px; margin-bottom: 12px; display: none; }
+#result-card { display: none; }
+.presets { margin-bottom: 12px; }
+.presets button { padding: 4px 12px; margin: 2px 4px; border: 1px solid #3498db; background: #fff; color: #3498db; border-radius: 4px; cursor: pointer; font-size: 0.85em; }
+.presets button:hover { background: #3498db; color: #fff; }
+.info { font-size: 0.8em; color: #888; margin-top: 8px; }
+.plot-box { width: 100%; height: 480px; }
+.range-row { display: flex; gap: 10px; flex-wrap: wrap; align-items: end; }
+.range-row label { display: block; font-size: 0.85em; color: #555; margin-bottom: 4px; }
+.range-row input, .range-row select { padding: 6px 10px; border: 1px solid #ccc; border-radius: 4px; font-size: 0.95em; width: 100px; }
+.range-row input.wide { width: 200px; }
+.tag-list { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.tag { display: inline-flex; align-items: center; gap: 4px; padding: 3px 10px; background: #e8f4fd; border: 1px solid #3498db; border-radius: 12px; font-size: 0.85em; }
+.tag .remove { cursor: pointer; color: #e74c3c; font-weight: 700; }
+button.btn-plot { display: block; margin: 12px auto 0; padding: 10px 36px; background: #27ae60; color: #fff; border: none; border-radius: 6px; font-size: 1.05em; cursor: pointer; }
+button.btn-plot:hover { background: #219a52; }
+#plot-progress { text-align: center; font-size: 0.9em; color: #666; margin-top: 8px; }
+.tabs { display: flex; gap: 0; margin-bottom: 0; }
+.tabs button { flex: 1; padding: 10px; border: 1px solid #ccc; background: #f0f0f0; cursor: pointer; font-size: 0.95em; border-bottom: none; }
+.tabs button.active { background: #fff; font-weight: 700; border-bottom: 2px solid #fff; margin-bottom: -1px; z-index: 1; }
+.tab-content { border: 1px solid #ccc; border-top: none; padding: 4px; }
+</style>
+</head>
+<body>
+<div class="container">
+<h1>Gibbs Equilibrium Calculator</h1>
+<p class="subtitle">NASA7 polynomial + Lagrange multiplier method</p>
+
+<div id="error"></div>
+
+<div class="card">
+  <h2>Conditions</h2>
+  <div class="conditions">
+    <div>
+      <label for="temp">Temperature [&deg;C]</label>
+      <input type="number" id="temp" value="300" step="10">
+    </div>
+    <div>
+      <label for="pval">Pressure</label>
+      <input type="number" id="pval" value="1" step="0.1" min="0.001">
+    </div>
+    <div>
+      <label for="punit">Unit</label>
+      <select id="punit">
+        <option value="atm" selected>atm</option>
+        <option value="MPa">MPa</option>
+        <option value="MPaG">MPaG</option>
+        <option value="kPa">kPa</option>
+        <option value="bar">bar</option>
+        <option value="Pa">Pa</option>
+      </select>
+    </div>
+  </div>
+</div>
+
+<div class="card">
+  <h2>Species &amp; Inlet Composition (mol)</h2>
+  <div class="presets">
+    <span style="font-size:0.85em;color:#555;">Presets:</span>
+    <button onclick="applyPreset('methanation')">CO2 methanation</button>
+    <button onclick="applyPreset('reform')">Steam reforming</button>
+    <button onclick="applyPreset('wgs')">Water-gas shift</button>
+    <button onclick="applyPreset('meoh')">MeOH synthesis</button>
+    <button onclick="applyPreset('ft')">Fischer-Tropsch</button>
+  </div>
+  <div class="species-grid" id="species-grid"></div>
+  <p class="info">Check species to include. Enter inlet moles (0 = product only).</p>
+</div>
+
+<button id="calc" onclick="calculate()">Calculate Equilibrium</button>
+
+<div class="card" id="plot-card">
+  <h2>Temperature Sweep &amp; Plotting</h2>
+  <div class="range-row">
+    <div>
+      <label>T min [&deg;C]</label>
+      <input type="number" id="t-min" value="100" step="50">
+    </div>
+    <div>
+      <label>T max [&deg;C]</label>
+      <input type="number" id="t-max" value="900" step="50">
+    </div>
+    <div>
+      <label>T step [&deg;C]</label>
+      <input type="number" id="t-step" value="25" step="5" min="1">
+    </div>
+    <div>
+      <label>Pressure unit</label>
+      <select id="plot-punit">
+        <option value="atm" selected>atm</option>
+        <option value="MPa">MPa</option>
+        <option value="MPaG">MPaG</option>
+        <option value="kPa">kPa</option>
+        <option value="bar">bar</option>
+      </select>
+    </div>
+    <div>
+      <label>Add pressure</label>
+      <div style="display:flex;gap:4px;">
+        <input type="number" id="plot-padd" value="1" step="0.1" min="0.001" style="width:80px">
+        <button onclick="addPressure()" style="padding:6px 12px;border:1px solid #27ae60;background:#fff;color:#27ae60;border-radius:4px;cursor:pointer;">+Add</button>
+      </div>
+    </div>
+  </div>
+  <div class="tag-list" id="pressure-tags"></div>
+  <p class="info" style="margin-top:4px;">Add one or more pressures. Each becomes a separate trace in the plot.</p>
+
+  <div class="range-row" style="margin-top:12px;">
+    <div>
+      <label>Conversion key reactant</label>
+      <select id="conv-key"></select>
+    </div>
+  </div>
+
+  <button class="btn-plot" onclick="runSweep()">Plot Conversion &amp; Selectivity</button>
+  <div id="plot-progress"></div>
+
+  <div style="margin-top:12px;">
+    <div class="tabs">
+      <button class="active" onclick="showTab(this,'tab-conv')">Conversion</button>
+      <button onclick="showTab(this,'tab-sel')">C-Selectivity</button>
+      <button onclick="showTab(this,'tab-comp')">Outlet mol%</button>
+    </div>
+    <div class="tab-content">
+      <div id="tab-conv" class="plot-box"></div>
+      <div id="tab-sel" class="plot-box" style="display:none;"></div>
+      <div id="tab-comp" class="plot-box" style="display:none;"></div>
+    </div>
+  </div>
+</div>
+
+<div class="card" id="result-card">
+  <h2>Equilibrium Result</h2>
+  <p id="result-cond"></p>
+  <table id="result-table">
+    <thead>
+      <tr><th>Species</th><th>Inlet mol</th><th>Inlet mol%</th><th>Outlet mol</th><th>Outlet mol%</th></tr>
+    </thead>
+    <tbody id="result-body"></tbody>
+  </table>
+  <p class="info" id="solver-info"></p>
+</div>
+</div>
+
+<script>
+"use strict";
+
+// =========================================================================
+// NASA7 thermodynamic data
+// =========================================================================
+const SPECIES_DB = {
+  "H2":       { comp:{H:2}, Tr:[200,1000,3500], lo:[2.34433112,0.00798052075,-1.9478151e-05,2.01572094e-08,-7.37611761e-12,-917.935173,0.683010238], hi:[3.3372792,-4.94024731e-05,4.99456778e-07,-1.79566394e-10,2.00255376e-14,-950.158922,-3.20502331] },
+  "CO2":      { comp:{C:1,O:2}, Tr:[200,1000,3500], lo:[2.35677352,0.00898459677,-7.12356269e-06,2.45919022e-09,-1.43699548e-13,-48371.9697,9.90105222], hi:[3.85746029,0.00441437026,-2.21481404e-06,5.23490188e-10,-4.72084164e-14,-48759.166,2.27163806] },
+  "CO":       { comp:{C:1,O:1}, Tr:[200,1000,3500], lo:[3.57953347,-0.00061035368,1.01681433e-06,9.07005884e-10,-9.04424499e-13,-14344.086,3.50840928], hi:[2.71518561,0.00206252743,-9.98825771e-07,2.30053008e-10,-2.03647716e-14,-14151.8724,7.81868772] },
+  "C(g)":     { comp:{C:1}, Tr:[200,1000,3500], lo:[2.55423955,-0.000321537724,7.33792245e-07,-7.32234889e-10,2.66521446e-13,85443.8832,4.53130848], hi:[2.49266888,4.79889284e-05,-7.2433502e-08,3.74291029e-11,-4.87277893e-15,85451.2953,4.80150373] },
+  "H2O":      { comp:{H:2,O:1}, Tr:[200,1000,3500], lo:[4.19864056,-0.0020364341,6.52040211e-06,-5.48797062e-09,1.77197817e-12,-30293.7267,-0.849032208], hi:[3.03399249,0.00217691804,-1.64072518e-07,-9.7041987e-11,1.68200992e-14,-30004.2971,4.9667701] },
+  "CH4":      { comp:{C:1,H:4}, Tr:[200,1000,3500], lo:[5.14987613,-0.0136709788,4.91800599e-05,-4.84743026e-08,1.66693956e-11,-10246.6476,-4.64130376], hi:[0.074851495,0.0133909467,-5.73285809e-06,1.22292535e-09,-1.0181523e-13,-9468.34459,18.437318] },
+  "CH3OH":    { comp:{C:1,H:4,O:1}, Tr:[200,1000,3500], lo:[5.71539582,-0.0152309129,6.52441155e-05,-7.10806889e-08,2.61352698e-11,-25642.7656,-1.50409823], hi:[1.78970791,0.0140938292,-6.36500835e-06,1.38171085e-09,-1.1706022e-13,-25374.8747,14.5023623] },
+  "CH3OCH3":  { comp:{C:2,H:6,O:1}, Tr:[200,1000,6000], lo:[5.46595502,-3.78307493e-03,5.80104975e-05,-6.61704995e-08,2.36675037e-11,-2.51269095e+04,-7.41883739e-01], hi:[5.52256973,1.51516598e-02,-5.31000340e-06,8.43166522e-10,-4.98976297e-14,-2.63076590e+04,-5.97699961e+00] },
+  "CH3CHO":   { comp:{C:2,H:4,O:1}, Tr:[200,1000,6000], lo:[4.7294595,-0.0031932858,4.7534921e-05,-5.7458611e-08,2.1931112e-11,-21572.878,4.1030159], hi:[5.4041108,0.011723059,-4.2263137e-06,6.8372451e-10,-4.0984863e-14,-22593.122,-3.4807917] },
+  "CH3COOH":  { comp:{C:2,H:4,O:2}, Tr:[200,1000,6000], lo:[3.40447203,7.63843891e-03,4.16989270e-05,-5.97498790e-08,2.37498760e-11,-5.34686310e+04,9.95028030e+00], hi:[6.33684770,1.28429920e-02,-4.62915530e-06,7.49795670e-10,-4.50063450e-14,-5.47041050e+04,-7.71503300e+00] },
+  "CH3COOCH3":{ comp:{C:3,H:6,O:2}, Tr:[200,1000,6000], lo:[3.23511860,1.39174410e-02,5.23453750e-05,-7.82097280e-08,3.18429160e-11,-5.14816780e+04,1.16177310e+01], hi:[8.54553130,1.63798170e-02,-5.82757620e-06,9.34218900e-10,-5.56766010e-14,-5.35253830e+04,-1.93270130e+01] },
+  "HCHO":     { comp:{C:1,H:2,O:1}, Tr:[200,1000,3500], lo:[4.79372315,-0.00990833369,3.73220008e-05,-3.79285261e-08,1.31772652e-11,-14308.9567,0.6028129], hi:[1.76069008,0.00920000082,-4.42258813e-06,1.00641212e-09,-8.8385564e-14,-13995.8323,13.656323] },
+  "C2H6":     { comp:{C:2,H:6}, Tr:[200,1000,3500], lo:[4.29142492,-0.0055015427,5.99438288e-05,-7.08466285e-08,2.68685771e-11,-11522.2055,2.66682316], hi:[1.0718815,0.0216852677,-1.00256067e-05,2.21412001e-09,-1.9000289e-13,-11426.3932,15.1156107] },
+  "C2H4":     { comp:{C:2,H:4}, Tr:[200,1000,3500], lo:[3.95920148,-0.00757052247,5.70990292e-05,-6.91588753e-08,2.69884373e-11,5089.77593,4.09733096], hi:[2.03611116,0.0146454151,-6.71077915e-06,1.47222923e-09,-1.25706061e-13,4939.88614,10.3053693] },
+  "C2H5OH":   { comp:{C:2,H:6,O:1}, Tr:[200,1000,6000], lo:[4.85869570,-3.74017260e-03,6.95554680e-05,-8.86547960e-08,3.51688360e-11,-2.99961320e+04,4.80185450e+00], hi:[6.56243650,1.52042120e-02,-5.38967830e-06,8.62524870e-10,-5.12299630e-14,-3.15254870e+04,-9.47302050e+00] },
+  "HCOOH":    { comp:{C:1,H:2,O:2}, Tr:[200,1000,6000], lo:[1.43548185,1.63363016e-02,-7.06729710e-06,-2.29787832e-09,2.06826580e-12,-4.64616264e+04,1.74427640e+01], hi:[4.61383160,6.44963710e-03,-2.29082880e-06,3.67147470e-10,-2.18738860e-14,-4.74299100e+04,6.47163020e-01] },
+  "N2":       { comp:{N:2}, Tr:[300,1000,5000], lo:[3.298677,0.0014082404,-3.963222e-06,5.641515e-09,-2.444854e-12,-1020.8999,3.950372], hi:[2.92664,0.0014879768,-5.68476e-07,1.0097038e-10,-6.753351e-15,-922.7977,5.980528] },
+};
+
+const SPECIES_ORDER = [
+  "H2","CO2","CO","C(g)","H2O","CH4",
+  "CH3OH","CH3OCH3","CH3CHO","CH3COOH","CH3COOCH3",
+  "HCHO","C2H6","C2H4","C2H5OH","HCOOH","N2"
+];
+
+const DISPLAY_NAMES = {
+  "C(g)": "C (gas)",
+  "HCHO": "HCHO (CH2O)",
+};
+
+// =========================================================================
+// NASA7 thermodynamic evaluation
+// =========================================================================
+function nasa7_g_over_RT(sp, T) {
+  // Returns G°/(RT) = H°/(RT) - S°/R
+  const d = SPECIES_DB[sp];
+  const a = (T <= d.Tr[1]) ? d.lo : d.hi;
+  const T2 = T*T, T3 = T2*T, T4 = T3*T;
+  const H_over_RT = a[0] + a[1]*T/2 + a[2]*T2/3 + a[3]*T3/4 + a[4]*T4/5 + a[5]/T;
+  const S_over_R  = a[0]*Math.log(T) + a[1]*T + a[2]*T2/2 + a[3]*T3/3 + a[4]*T4/4 + a[6];
+  return H_over_RT - S_over_R;
+}
+
+// =========================================================================
+// Pressure parser
+// =========================================================================
+function parsePressure(val, unit) {
+  const v = parseFloat(val);
+  const ATM = 101325.0;
+  switch(unit) {
+    case "atm":  return v * ATM;
+    case "MPa":  return v * 1e6;
+    case "MPaG": return v * 1e6 + ATM;
+    case "kPa":  return v * 1e3;
+    case "bar":  return v * 1e5;
+    case "Pa":   return v;
+    default:     return v;
+  }
+}
+
+// =========================================================================
+// Linear algebra utilities
+// =========================================================================
+
+// Solve Ax = b via Gaussian elimination with partial pivoting
+function solveLinear(A, b) {
+  const n = b.length;
+  const M = A.map((row, i) => [...row, b[i]]);
+  for (let col = 0; col < n; col++) {
+    let maxVal = Math.abs(M[col][col]), maxRow = col;
+    for (let row = col + 1; row < n; row++) {
+      if (Math.abs(M[row][col]) > maxVal) { maxVal = Math.abs(M[row][col]); maxRow = row; }
+    }
+    if (maxVal < 1e-30) return null;
+    if (maxRow !== col) { [M[col], M[maxRow]] = [M[maxRow], M[col]]; }
+    for (let row = col + 1; row < n; row++) {
+      const f = M[row][col] / M[col][col];
+      for (let j = col; j <= n; j++) M[row][j] -= f * M[col][j];
+    }
+  }
+  const x = new Array(n);
+  for (let i = n - 1; i >= 0; i--) {
+    x[i] = M[i][n];
+    for (let j = i + 1; j < n; j++) x[i] -= M[i][j] * x[j];
+    x[i] /= M[i][i];
+  }
+  return x;
+}
+
+
+// =========================================================================
+// Gibbs equilibrium solver: Log-space Newton with Lagrange multipliers
+//
+// Variables: y_i = ln(n_i), lambda_j (element potentials)
+//
+// KKT conditions:
+//   F_i = g0_i + y_i - ln(nTot) + lnPr - sum_j(lam_j * a_ij) = 0
+//   G_j = sum_i(a_ij * n_i) - b_j = 0
+//
+// Jacobian: [I - n*n^T/nTot^2   -A^T    ] [dy  ]   [-F]
+//           [A*diag(n)            0       ] [dlam] = [-G]
+//
+// Advantage: Hessian has O(n_i) terms, not O(1/n_i), so well-conditioned.
+// =========================================================================
+function gibbsEquilibrium(speciesList, inletMoles, T_K, P_Pa) {
+  const P_ref = 101325.0;
+  const NS = speciesList.length;
+
+  // Identify elements
+  const elemSet = new Set();
+  for (const sp of speciesList) {
+    for (const el of Object.keys(SPECIES_DB[sp].comp)) elemSet.add(el);
+  }
+  const elements = [...elemSet].sort();
+  const NE = elements.length;
+
+  // Element matrix a[i][j] = atoms of element j in species i
+  const aij = speciesList.map(sp => elements.map(el => SPECIES_DB[sp].comp[el] || 0));
+
+  // Element totals from inlet
+  const b = elements.map((_, j) => {
+    let s = 0;
+    for (let i = 0; i < NS; i++) s += aij[i][j] * inletMoles[i];
+    return s;
+  });
+
+  // g0_i = G°_i / (RT)
+  const g0 = speciesList.map(sp => nasa7_g_over_RT(sp, T_K));
+  const lnPr = Math.log(P_Pa / P_ref);
+
+  // Initial guess: y_i = ln(n_i), lambda_j = 0
+  const totalInlet = inletMoles.reduce((s, v) => s + v, 0);
+  const y = new Array(NS);
+  for (let i = 0; i < NS; i++) {
+    y[i] = Math.log(Math.max(inletMoles[i], totalInlet / NS * 0.1));
+  }
+  const lam = new Array(NE).fill(0);
+
+  const DIM = NS + NE;
+  const MAX_ITER = 200;
+  const TOL = 1e-10;
+  let converged = false;
+  let iterations = 0;
+
+  for (let iter = 0; iter < MAX_ITER; iter++) {
+    iterations = iter + 1;
+
+    // Compute n_i = exp(y_i), nTot
+    const n = y.map(v => Math.exp(v));
+    const nTot = n.reduce((s, v) => s + v, 0);
+    const lnNTot = Math.log(nTot);
+
+    // Residuals F_i, G_j
+    const F = new Array(NS);
+    for (let i = 0; i < NS; i++) {
+      F[i] = g0[i] + y[i] - lnNTot + lnPr;
+      for (let j = 0; j < NE; j++) F[i] -= lam[j] * aij[i][j];
+    }
+
+    const G = new Array(NE);
+    for (let j = 0; j < NE; j++) {
+      G[j] = -b[j];
+      for (let i = 0; i < NS; i++) G[j] += aij[i][j] * n[i];
+    }
+
+    // Check convergence
+    let maxRes = 0;
+    for (let i = 0; i < NS; i++) maxRes = Math.max(maxRes, Math.abs(F[i]));
+    for (let j = 0; j < NE; j++) maxRes = Math.max(maxRes, Math.abs(G[j]) / Math.max(b[j], 1e-10));
+    if (maxRes < TOL) { converged = true; break; }
+
+    // Build Jacobian (DIM x DIM) and RHS
+    // Top-left (NS x NS): dF_i/dy_k = delta_ik - n_k/nTot
+    // Top-right (NS x NE): dF_i/dlam_j = -a_ij
+    // Bottom-left (NE x NS): dG_j/dy_k = a_kj * n_k
+    // Bottom-right (NE x NE): 0
+    const J = Array.from({length: DIM}, () => new Array(DIM).fill(0));
+    const rhs = new Array(DIM);
+
+    for (let i = 0; i < NS; i++) {
+      for (let k = 0; k < NS; k++) {
+        J[i][k] = (i === k ? 1.0 : 0.0) - n[k] / nTot;
+      }
+      for (let j = 0; j < NE; j++) {
+        J[i][NS + j] = -aij[i][j];
+      }
+      rhs[i] = -F[i];
+    }
+
+    for (let j = 0; j < NE; j++) {
+      for (let k = 0; k < NS; k++) {
+        J[NS + j][k] = aij[k][j] * n[k];
+      }
+      rhs[NS + j] = -G[j];
+    }
+
+    // Solve
+    const delta = solveLinear(J, rhs);
+    if (!delta) break;
+
+    // Damped step
+    let alpha = 1.0;
+    // Limit dy to avoid huge jumps
+    for (let i = 0; i < NS; i++) {
+      if (Math.abs(delta[i]) > 5.0) {
+        alpha = Math.min(alpha, 5.0 / Math.abs(delta[i]));
+      }
+    }
+
+    // Apply
+    for (let i = 0; i < NS; i++) y[i] += alpha * delta[i];
+    for (let j = 0; j < NE; j++) lam[j] += alpha * delta[NS + j];
+  }
+
+  // Final composition
+  const n = y.map(v => Math.exp(v));
+  const nTot = n.reduce((s, v) => s + v, 0);
+  for (let i = 0; i < NS; i++) {
+    if (n[i] < nTot * 1e-15) n[i] = 0;
+  }
+  const nTotFinal = n.reduce((s, v) => s + v, 0);
+  const yFinal = n.map(v => nTotFinal > 0 ? v / nTotFinal : 0);
+
+  return {
+    species: speciesList,
+    outletMoles: n,
+    outletFractions: yFinal,
+    nTotal: nTotFinal,
+    converged,
+    iterations,
+  };
+}
+
+// =========================================================================
+// UI
+// =========================================================================
+function buildUI() {
+  const grid = document.getElementById("species-grid");
+  for (const sp of SPECIES_ORDER) {
+    const div = document.createElement("div");
+    div.className = "species-row";
+    div.id = "row-" + sp.replace(/[() ]/g,"_");
+    const display = DISPLAY_NAMES[sp] || sp;
+    div.innerHTML =
+      `<input type="checkbox" id="chk-${sp}" data-sp="${sp}" checked onchange="toggleSpecies('${sp}')">` +
+      `<span class="sp-name">${display}</span>` +
+      `<input type="number" id="mol-${sp}" value="0" min="0" step="0.1" style="width:70px">`;
+    grid.appendChild(div);
+  }
+}
+
+function toggleSpecies(sp) {
+  const chk = document.getElementById("chk-" + sp);
+  const inp = document.getElementById("mol-" + sp);
+  const row = document.getElementById("row-" + sp.replace(/[() ]/g,"_"));
+  inp.disabled = !chk.checked;
+  row.className = chk.checked ? "species-row active" : "species-row";
+}
+
+function applyPreset(name) {
+  // Reset all
+  for (const sp of SPECIES_ORDER) {
+    document.getElementById("chk-" + sp).checked = false;
+    document.getElementById("mol-" + sp).value = "0";
+    toggleSpecies(sp);
+  }
+  let enable = {};
+  let T, P, Pu;
+  switch(name) {
+    case "methanation":
+      enable = {H2:4, CO2:1, CO:0, H2O:0, CH4:0, "C(g)":0};
+      T = 300; P = 1; Pu = "atm"; break;
+    case "reform":
+      enable = {H2:0, CO2:0, CO:0, H2O:3, CH4:1, "C(g)":0};
+      T = 850; P = 2; Pu = "MPaG"; break;
+    case "wgs":
+      enable = {H2:0, CO2:0, CO:1, H2O:1, CH4:0, "C(g)":0};
+      T = 400; P = 1; Pu = "atm"; break;
+    case "meoh":
+      enable = {H2:3, CO2:1, CO:0, H2O:0, CH4:0, CH3OH:0, CH3OCH3:0, N2:0.1};
+      T = 250; P = 5; Pu = "MPa"; break;
+    case "ft":
+      enable = {H2:2, CO:1, CO2:0, H2O:0, CH4:0, C2H4:0, C2H6:0, CH3OH:0, CH3CHO:0, "C(g)":0};
+      T = 250; P = 2; Pu = "MPa"; break;
+  }
+  for (const [sp, mol] of Object.entries(enable)) {
+    document.getElementById("chk-" + sp).checked = true;
+    document.getElementById("mol-" + sp).value = mol;
+    toggleSpecies(sp);
+  }
+  document.getElementById("temp").value = T;
+  document.getElementById("pval").value = P;
+  document.getElementById("punit").value = Pu;
+}
+
+function showError(msg) {
+  const el = document.getElementById("error");
+  el.textContent = msg;
+  el.style.display = msg ? "block" : "none";
+}
+
+function calculate() {
+  showError("");
+  const T_C = parseFloat(document.getElementById("temp").value);
+  const P_val = document.getElementById("pval").value;
+  const P_unit = document.getElementById("punit").value;
+
+  if (isNaN(T_C)) { showError("Temperature is invalid."); return; }
+  const T_K = T_C + 273.15;
+  if (T_K <= 0) { showError("Temperature must be > -273.15 C."); return; }
+
+  const P_Pa = parsePressure(P_val, P_unit);
+  if (isNaN(P_Pa) || P_Pa <= 0) { showError("Pressure is invalid."); return; }
+
+  // Collect active species and inlet moles
+  const speciesList = [];
+  const inletMoles = [];
+  for (const sp of SPECIES_ORDER) {
+    if (document.getElementById("chk-" + sp).checked) {
+      const mol = parseFloat(document.getElementById("mol-" + sp).value) || 0;
+      speciesList.push(sp);
+      inletMoles.push(mol);
+    }
+  }
+  if (speciesList.length < 2) { showError("At least 2 species required."); return; }
+  const totalInlet = inletMoles.reduce((s,v)=>s+v, 0);
+  if (totalInlet <= 0) { showError("Total inlet moles must be > 0."); return; }
+
+  // Check temperature range
+  for (const sp of speciesList) {
+    const d = SPECIES_DB[sp];
+    if (T_K < d.Tr[0] - 50 || T_K > d.Tr[2] + 500) {
+      showError(`Warning: T=${T_K.toFixed(0)}K is outside valid range for ${sp} (${d.Tr[0]}-${d.Tr[2]}K)`);
+      // Continue anyway (just warn)
+    }
+  }
+
+  // Run solver
+  const t0 = performance.now();
+  const result = gibbsEquilibrium(speciesList, inletMoles, T_K, P_Pa);
+  const elapsed = (performance.now() - t0).toFixed(1);
+
+  // Display result
+  const resultCard = document.getElementById("result-card");
+  resultCard.style.display = "block";
+
+  const P_atm = P_Pa / 101325.0;
+  document.getElementById("result-cond").innerHTML =
+    `<strong>T:</strong> ${T_C} &deg;C (${T_K.toFixed(2)} K) &nbsp; <strong>P:</strong> ${P_atm.toFixed(3)} atm (${P_Pa.toFixed(0)} Pa)`;
+
+  const tbody = document.getElementById("result-body");
+  tbody.innerHTML = "";
+
+  const inletFrac = inletMoles.map(v => v / totalInlet);
+  let outTotal = result.nTotal;
+
+  for (let i = 0; i < speciesList.length; i++) {
+    const sp = speciesList[i];
+    const display = DISPLAY_NAMES[sp] || sp;
+    const inM = inletMoles[i];
+    const inF = inletFrac[i] * 100;
+    const outM = result.outletMoles[i];
+    const outF = result.outletFractions[i] * 100;
+    const isZero = outM < 1e-8 && inM < 1e-8;
+    const tr = document.createElement("tr");
+    if (isZero) tr.className = "zero";
+    tr.innerHTML =
+      `<td>${display}</td>` +
+      `<td>${inM.toFixed(4)}</td>` +
+      `<td>${inF.toFixed(2)}</td>` +
+      `<td>${outM < 0.0001 && outM > 0 ? outM.toExponential(4) : outM.toFixed(6)}</td>` +
+      `<td>${outF.toFixed(4)}</td>`;
+    tbody.appendChild(tr);
+  }
+
+  // Total row
+  const trTotal = document.createElement("tr");
+  trTotal.className = "total";
+  trTotal.innerHTML =
+    `<td>Total</td><td>${totalInlet.toFixed(4)}</td><td>100.00</td>` +
+    `<td>${outTotal.toFixed(6)}</td><td>100.0000</td>`;
+  tbody.appendChild(trTotal);
+
+  document.getElementById("solver-info").textContent =
+    `${result.converged ? "Converged" : "NOT converged"} in ${result.iterations} iterations (${elapsed} ms)`;
+
+  resultCard.scrollIntoView({ behavior: "smooth" });
+}
+
+// =========================================================================
+// Plotting: pressure list management
+// =========================================================================
+const pressureList = [];
+
+function addPressure() {
+  const val = parseFloat(document.getElementById("plot-padd").value);
+  const unit = document.getElementById("plot-punit").value;
+  if (isNaN(val) || val <= 0) return;
+  const label = val + " " + unit;
+  if (pressureList.some(p => p.label === label)) return;
+  pressureList.push({ val, unit, label, Pa: parsePressure(val, unit) });
+  renderPressureTags();
+}
+
+function removePressure(idx) {
+  pressureList.splice(idx, 1);
+  renderPressureTags();
+}
+
+function renderPressureTags() {
+  const el = document.getElementById("pressure-tags");
+  el.innerHTML = pressureList.map((p, i) =>
+    `<span class="tag">${p.label} <span class="remove" onclick="removePressure(${i})">&times;</span></span>`
+  ).join("");
+}
+
+// =========================================================================
+// Plotting: temperature sweep
+// =========================================================================
+function getActiveSpeciesAndInlet() {
+  const speciesList = [], inletMoles = [];
+  for (const sp of SPECIES_ORDER) {
+    if (document.getElementById("chk-" + sp).checked) {
+      speciesList.push(sp);
+      inletMoles.push(parseFloat(document.getElementById("mol-" + sp).value) || 0);
+    }
+  }
+  return { speciesList, inletMoles };
+}
+
+function updateConvKeySelect() {
+  const sel = document.getElementById("conv-key");
+  const { speciesList, inletMoles } = getActiveSpeciesAndInlet();
+  sel.innerHTML = "";
+  for (let i = 0; i < speciesList.length; i++) {
+    if (inletMoles[i] > 0) {
+      const opt = document.createElement("option");
+      opt.value = speciesList[i];
+      opt.textContent = DISPLAY_NAMES[speciesList[i]] || speciesList[i];
+      sel.appendChild(opt);
+    }
+  }
+}
+
+function showTab(btn, tabId) {
+  const tabs = btn.parentElement.querySelectorAll("button");
+  tabs.forEach(t => t.classList.remove("active"));
+  btn.classList.add("active");
+  const content = btn.parentElement.nextElementSibling;
+  content.querySelectorAll(".plot-box").forEach(d => d.style.display = "none");
+  document.getElementById(tabId).style.display = "block";
+}
+
+// Dash patterns for pressure differentiation
+const DASH_STYLES = ["solid", "dash", "dot", "dashdot", "longdash", "longdashdot"];
+
+function runSweep() {
+  showError("");
+  const { speciesList, inletMoles } = getActiveSpeciesAndInlet();
+  if (speciesList.length < 2) { showError("At least 2 species required."); return; }
+  const totalInlet = inletMoles.reduce((s, v) => s + v, 0);
+  if (totalInlet <= 0) { showError("Total inlet moles must be > 0."); return; }
+  if (pressureList.length === 0) { showError("Add at least one pressure."); return; }
+
+  const tMin = parseFloat(document.getElementById("t-min").value);
+  const tMax = parseFloat(document.getElementById("t-max").value);
+  const tStep = parseFloat(document.getElementById("t-step").value);
+  if (isNaN(tMin) || isNaN(tMax) || isNaN(tStep) || tStep <= 0 || tMin >= tMax) {
+    showError("Invalid temperature range."); return;
+  }
+
+  const convKey = document.getElementById("conv-key").value;
+  const convKeyIdx = speciesList.indexOf(convKey);
+  if (convKeyIdx < 0 || inletMoles[convKeyIdx] <= 0) {
+    showError("Select a valid key reactant with inlet > 0."); return;
+  }
+
+  // Carbon count per species
+  const carbonCount = speciesList.map(sp => SPECIES_DB[sp].comp.C || 0);
+
+  // Temperature array
+  const temps = [];
+  for (let t = tMin; t <= tMax + 0.01; t += tStep) temps.push(t);
+
+  const totalCalcs = temps.length * pressureList.length;
+  const progEl = document.getElementById("plot-progress");
+  progEl.textContent = `Calculating 0 / ${totalCalcs} ...`;
+
+  // Run asynchronously to allow UI update
+  setTimeout(() => {
+    // Results indexed by [pIdx][tIdx]
+    const results = [];
+    let count = 0;
+
+    for (let pi = 0; pi < pressureList.length; pi++) {
+      const pResults = [];
+      for (let ti = 0; ti < temps.length; ti++) {
+        const T_K = temps[ti] + 273.15;
+        const r = gibbsEquilibrium(speciesList, inletMoles, T_K, pressureList[pi].Pa);
+        pResults.push(r);
+        count++;
+      }
+      results.push(pResults);
+    }
+    progEl.textContent = `Done: ${count} calculations.`;
+
+    // --- Build Conversion traces ---
+    const convTraces = [];
+    // For each reactant (inlet > 0), for each pressure
+    for (let pi = 0; pi < pressureList.length; pi++) {
+      for (let si = 0; si < speciesList.length; si++) {
+        if (inletMoles[si] <= 0) continue;
+        const sp = speciesList[si];
+        const display = DISPLAY_NAMES[sp] || sp;
+        const yData = temps.map((_, ti) => {
+          const out = results[pi][ti].outletMoles[si];
+          return (inletMoles[si] - out) / inletMoles[si] * 100;
+        });
+        convTraces.push({
+          x: temps, y: yData,
+          name: display + " @ " + pressureList[pi].label,
+          mode: "lines", line: { dash: DASH_STYLES[pi % DASH_STYLES.length], width: 2 },
+        });
+      }
+    }
+
+    Plotly.newPlot("tab-conv", convTraces, {
+      title: "Conversion vs Temperature",
+      xaxis: { title: "Temperature [°C]" },
+      yaxis: { title: "Conversion [%]", range: [0, 105] },
+      legend: { orientation: "h", y: -0.25 },
+      margin: { t: 50, b: 80 },
+    }, { responsive: true });
+
+    // --- Build C-Selectivity traces ---
+    // C-selectivity_i = C_i * max(0, Δn_i) / Σ_j C_j * max(0, Δn_j)
+    // where Δn_i = n_out_i - n_in_i (net production)
+    // Denominator = total C in ALL net products → always sums to 100%
+    const selTraces = [];
+
+    for (let pi = 0; pi < pressureList.length; pi++) {
+      for (let si = 0; si < speciesList.length; si++) {
+        if (carbonCount[si] === 0) continue;
+        const sp = speciesList[si];
+        const display = DISPLAY_NAMES[sp] || sp;
+        const yData = temps.map((_, ti) => {
+          const r = results[pi][ti];
+          const delta_i = r.outletMoles[si] - inletMoles[si];
+          if (delta_i <= 1e-15) return 0; // not a net product
+
+          // Total C in all net products (species where outlet > inlet)
+          let totalCProd = 0;
+          for (let k = 0; k < speciesList.length; k++) {
+            const dk = r.outletMoles[k] - inletMoles[k];
+            if (dk > 1e-15 && carbonCount[k] > 0) {
+              totalCProd += carbonCount[k] * dk;
+            }
+          }
+          if (totalCProd <= 1e-15) return 0;
+          return carbonCount[si] * delta_i / totalCProd * 100;
+        });
+        if (yData.some(v => v > 0.01)) {
+          selTraces.push({
+            x: temps, y: yData,
+            name: display + " @ " + pressureList[pi].label,
+            mode: "lines", line: { dash: DASH_STYLES[pi % DASH_STYLES.length], width: 2 },
+          });
+        }
+      }
+    }
+
+    Plotly.newPlot("tab-sel", selTraces, {
+      title: "Carbon Selectivity vs Temperature",
+      xaxis: { title: "Temperature [°C]" },
+      yaxis: { title: "C-Selectivity [%]", range: [0, 105] },
+      legend: { orientation: "h", y: -0.25 },
+      margin: { t: 50, b: 80 },
+    }, { responsive: true });
+
+    // --- Build Outlet mol% traces ---
+    const compTraces = [];
+    for (let pi = 0; pi < pressureList.length; pi++) {
+      for (let si = 0; si < speciesList.length; si++) {
+        const sp = speciesList[si];
+        const display = DISPLAY_NAMES[sp] || sp;
+        const yData = temps.map((_, ti) => results[pi][ti].outletFractions[si] * 100);
+        if (yData.some(v => v > 0.01)) {
+          compTraces.push({
+            x: temps, y: yData,
+            name: display + " @ " + pressureList[pi].label,
+            mode: "lines", line: { dash: DASH_STYLES[pi % DASH_STYLES.length], width: 2 },
+          });
+        }
+      }
+    }
+
+    Plotly.newPlot("tab-comp", compTraces, {
+      title: "Outlet Composition vs Temperature",
+      xaxis: { title: "Temperature [°C]" },
+      yaxis: { title: "Outlet mol%" },
+      legend: { orientation: "h", y: -0.25 },
+      margin: { t: 50, b: 80 },
+    }, { responsive: true });
+
+  }, 50);
+}
+
+// =========================================================================
+// Init
+// =========================================================================
+buildUI();
+applyPreset("methanation");
+
+// Add default pressure from main conditions
+addPressure();
+
+// Update conv key select when species change
+document.getElementById("species-grid").addEventListener("change", updateConvKeySelect);
+updateConvKeySelect();
+</script>
+</body>
+</html>
