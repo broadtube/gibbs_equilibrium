@@ -10,12 +10,18 @@
 body { font-family: "Segoe UI", system-ui, sans-serif; background: #f5f7fa; color: #333; padding: 20px; }
 h1 { text-align: center; margin-bottom: 8px; font-size: 1.5em; }
 .subtitle { text-align: center; color: #666; margin-bottom: 20px; font-size: 0.9em; }
-.container { max-width: 900px; margin: 0 auto; }
+.container { max-width: 1000px; margin: 0 auto; }
 .card { background: #fff; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); padding: 20px; margin-bottom: 16px; }
 .card h2 { font-size: 1.1em; margin-bottom: 12px; color: #2c3e50; border-bottom: 2px solid #3498db; padding-bottom: 6px; }
 .conditions { display: flex; gap: 16px; flex-wrap: wrap; align-items: end; }
 .conditions label { display: block; font-size: 0.85em; color: #555; margin-bottom: 4px; }
 .conditions input, .conditions select { padding: 8px 12px; border: 1px solid #ccc; border-radius: 4px; font-size: 1em; width: 120px; }
+.conditions select.wide { width: 160px; }
+#warning { color: #e67e22; padding: 12px; background: #fef5e7; border-radius: 4px; margin-bottom: 12px; display: none; }
+.eos-badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 0.8em; font-weight: 600; margin-left: 12px; }
+.eos-ideal { background: #e8f8f5; color: #1abc9c; }
+.eos-pr { background: #ebf5fb; color: #3498db; }
+.eos-rk { background: #fdebd0; color: #e67e22; }
 .species-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 8px; }
 .species-row { display: flex; align-items: center; gap: 8px; padding: 4px 8px; border-radius: 4px; background: #f8f9fa; }
 .species-row.active { background: #e8f4fd; }
@@ -42,6 +48,7 @@ tr.zero td { color: #bbb; }
 .range-row { display: flex; gap: 10px; flex-wrap: wrap; align-items: end; }
 .range-row label { display: block; font-size: 0.85em; color: #555; margin-bottom: 4px; }
 .range-row input, .range-row select { padding: 6px 10px; border: 1px solid #ccc; border-radius: 4px; font-size: 0.95em; width: 100px; }
+.range-row select.wide { width: 140px; }
 .range-row input.wide { width: 200px; }
 .tag-list { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
 .tag { display: inline-flex; align-items: center; gap: 4px; padding: 3px 10px; background: #e8f4fd; border: 1px solid #3498db; border-radius: 12px; font-size: 0.85em; }
@@ -61,13 +68,14 @@ button.btn-plot:hover { background: #219a52; }
 <p class="subtitle">NASA7 polynomial + Lagrange multiplier method</p>
 
 <div id="error"></div>
+<div id="warning"></div>
 
 <div class="card">
   <h2>Conditions</h2>
   <div class="conditions">
     <div>
       <label for="temp">Temperature [&deg;C]</label>
-      <input type="number" id="temp" value="300" step="10">
+      <input type="number" id="temp" value="150" step="10">
     </div>
     <div>
       <label for="pval">Pressure</label>
@@ -76,12 +84,20 @@ button.btn-plot:hover { background: #219a52; }
     <div>
       <label for="punit">Unit</label>
       <select id="punit">
-        <option value="atm" selected>atm</option>
+        <option value="MPaG" selected>MPaG</option>
         <option value="MPa">MPa</option>
-        <option value="MPaG">MPaG</option>
+        <option value="atm">atm</option>
         <option value="kPa">kPa</option>
         <option value="bar">bar</option>
         <option value="Pa">Pa</option>
+      </select>
+    </div>
+    <div>
+      <label for="eos">Equation of State</label>
+      <select id="eos" class="wide">
+        <option value="pr" selected>Peng-Robinson</option>
+        <option value="rk">Redlich-Kwong</option>
+        <option value="ideal">Ideal Gas</option>
       </select>
     </div>
   </div>
@@ -91,10 +107,11 @@ button.btn-plot:hover { background: #219a52; }
   <h2>Species &amp; Inlet Composition (mol)</h2>
   <div class="presets">
     <span style="font-size:0.85em;color:#555;">Presets:</span>
+    <button onclick="applyPreset('dme')">DME synthesis</button>
+    <button onclick="applyPreset('meoh')">MeOH synthesis</button>
     <button onclick="applyPreset('methanation')">CO2 methanation</button>
     <button onclick="applyPreset('reform')">Steam reforming</button>
     <button onclick="applyPreset('wgs')">Water-gas shift</button>
-    <button onclick="applyPreset('meoh')">MeOH synthesis</button>
     <button onclick="applyPreset('ft')">Fischer-Tropsch</button>
   </div>
   <div class="species-grid" id="species-grid"></div>
@@ -121,9 +138,9 @@ button.btn-plot:hover { background: #219a52; }
     <div>
       <label>Pressure unit</label>
       <select id="plot-punit">
-        <option value="atm" selected>atm</option>
+        <option value="MPaG" selected>MPaG</option>
         <option value="MPa">MPa</option>
-        <option value="MPaG">MPaG</option>
+        <option value="atm">atm</option>
         <option value="kPa">kPa</option>
         <option value="bar">bar</option>
       </select>
@@ -144,6 +161,14 @@ button.btn-plot:hover { background: #219a52; }
       <label>Conversion key reactant</label>
       <select id="conv-key"></select>
     </div>
+    <div>
+      <label>EOS for plot</label>
+      <select id="plot-eos" class="wide">
+        <option value="pr" selected>Peng-Robinson</option>
+        <option value="rk">Redlich-Kwong</option>
+        <option value="ideal">Ideal Gas</option>
+      </select>
+    </div>
   </div>
 
   <button class="btn-plot" onclick="runSweep()">Plot Conversion &amp; Selectivity</button>
@@ -154,11 +179,13 @@ button.btn-plot:hover { background: #219a52; }
       <button class="active" onclick="showTab(this,'tab-conv')">Conversion</button>
       <button onclick="showTab(this,'tab-sel')">C-Selectivity</button>
       <button onclick="showTab(this,'tab-comp')">Outlet mol%</button>
+      <button onclick="showTab(this,'tab-z')">Z Factor</button>
     </div>
     <div class="tab-content">
       <div id="tab-conv" class="plot-box"></div>
       <div id="tab-sel" class="plot-box" style="display:none;"></div>
       <div id="tab-comp" class="plot-box" style="display:none;"></div>
+      <div id="tab-z" class="plot-box" style="display:none;"></div>
     </div>
   </div>
 </div>
@@ -168,7 +195,7 @@ button.btn-plot:hover { background: #219a52; }
   <p id="result-cond"></p>
   <table id="result-table">
     <thead>
-      <tr><th>Species</th><th>Inlet mol</th><th>Inlet mol%</th><th>Outlet mol</th><th>Outlet mol%</th></tr>
+      <tr><th>Species</th><th>Inlet mol</th><th>Inlet mol%</th><th>Outlet mol</th><th>Outlet mol%</th><th>φ<sub>i</sub></th></tr>
     </thead>
     <tbody id="result-body"></tbody>
   </table>
@@ -214,6 +241,48 @@ const DISPLAY_NAMES = {
 };
 
 // =========================================================================
+// Gas constant
+// =========================================================================
+const R = 8.314462;  // J/(mol·K)
+
+// =========================================================================
+// Critical properties for EOS (Tc [K], Pc [Pa], omega)
+// =========================================================================
+const CRITICAL_PROPS = {
+  "H2":       { Tc: 33.19, Pc: 1.313e6, omega: -0.216 },
+  "CO2":      { Tc: 304.21, Pc: 7.383e6, omega: 0.224 },
+  "CO":       { Tc: 132.92, Pc: 3.499e6, omega: 0.048 },
+  "C(g)":     { Tc: 6810, Pc: 2.29e8, omega: 0.0 },  // estimated
+  "H2O":      { Tc: 647.14, Pc: 22.064e6, omega: 0.344 },
+  "CH4":      { Tc: 190.56, Pc: 4.599e6, omega: 0.011 },
+  "CH3OH":    { Tc: 512.6, Pc: 8.084e6, omega: 0.565 },
+  "CH3OCH3":  { Tc: 400.1, Pc: 5.37e6, omega: 0.200 },
+  "CH3CHO":   { Tc: 466.0, Pc: 5.57e6, omega: 0.291 },
+  "CH3COOH":  { Tc: 591.95, Pc: 5.786e6, omega: 0.467 },
+  "CH3COOCH3":{ Tc: 506.6, Pc: 4.75e6, omega: 0.331 },
+  "HCHO":     { Tc: 408.0, Pc: 6.59e6, omega: 0.282 },
+  "C2H6":     { Tc: 305.32, Pc: 4.872e6, omega: 0.099 },
+  "C2H4":     { Tc: 282.34, Pc: 5.041e6, omega: 0.087 },
+  "C2H5OH":   { Tc: 513.92, Pc: 6.148e6, omega: 0.649 },
+  "HCOOH":    { Tc: 588.0, Pc: 5.81e6, omega: 0.473 },
+  "N2":       { Tc: 126.2, Pc: 3.39e6, omega: 0.037 },
+};
+
+// =========================================================================
+// Antoine coefficients for vapor pressure (T in K, P in Pa)
+// log10(P) = A - B/(C + T)
+// =========================================================================
+const ANTOINE_COEFFS = {
+  "H2O":      { A: 11.6834, B: 3816.44, C: -46.13, Tmin: 273, Tmax: 473 },
+  "CH3OH":    { A: 11.9673, B: 3626.55, C: -34.29, Tmin: 257, Tmax: 364 },
+  "CH3OCH3":  { A: 10.1596, B: 2294.9, C: -27.86, Tmin: 189, Tmax: 248 },
+  "C2H5OH":   { A: 12.3022, B: 3803.98, C: -41.68, Tmin: 270, Tmax: 369 },
+  "CH3CHO":   { A: 10.8128, B: 2790.5, C: -39.23, Tmin: 255, Tmax: 294 },
+  "CH3COOH":  { A: 11.8463, B: 4457.83, C: -14.70, Tmin: 290, Tmax: 430 },
+  "HCOOH":    { A: 10.7152, B: 3083.0, C: -55.15, Tmin: 280, Tmax: 374 },
+};
+
+// =========================================================================
 // NASA7 thermodynamic evaluation
 // =========================================================================
 function nasa7_g_over_RT(sp, T) {
@@ -241,6 +310,194 @@ function parsePressure(val, unit) {
     case "Pa":   return v;
     default:     return v;
   }
+}
+
+// =========================================================================
+// EOS: Peng-Robinson parameters
+// =========================================================================
+function calcPRParams(species, T, P, y) {
+  const NS = species.length;
+  const a_i = [], b_i = [], kappa_i = [], alpha_i = [];
+
+  for (const sp of species) {
+    const cp = CRITICAL_PROPS[sp];
+    const Tr = T / cp.Tc;
+    const kappa = 0.37464 + 1.54226 * cp.omega - 0.26992 * cp.omega * cp.omega;
+    const alpha = Math.pow(1 + kappa * (1 - Math.sqrt(Tr)), 2);
+    const a = 0.45724 * R * R * cp.Tc * cp.Tc / cp.Pc * alpha;
+    const b = 0.07780 * R * cp.Tc / cp.Pc;
+    a_i.push(a);
+    b_i.push(b);
+    kappa_i.push(kappa);
+    alpha_i.push(alpha);
+  }
+
+  // Mixing rules (van der Waals one-fluid)
+  let a_mix = 0, b_mix = 0;
+  for (let i = 0; i < NS; i++) {
+    b_mix += y[i] * b_i[i];
+    for (let j = 0; j < NS; j++) {
+      a_mix += y[i] * y[j] * Math.sqrt(a_i[i] * a_i[j]);
+    }
+  }
+
+  const A = a_mix * P / (R * R * T * T);
+  const B = b_mix * P / (R * T);
+
+  return { a_i, b_i, a_mix, b_mix, A, B };
+}
+
+// =========================================================================
+// EOS: Redlich-Kwong parameters
+// =========================================================================
+function calcRKParams(species, T, P, y) {
+  const NS = species.length;
+  const a_i = [], b_i = [];
+
+  for (const sp of species) {
+    const cp = CRITICAL_PROPS[sp];
+    const a = 0.42748 * R * R * Math.pow(cp.Tc, 2.5) / cp.Pc / Math.sqrt(T);
+    const b = 0.08664 * R * cp.Tc / cp.Pc;
+    a_i.push(a);
+    b_i.push(b);
+  }
+
+  // Mixing rules
+  let a_mix = 0, b_mix = 0;
+  for (let i = 0; i < NS; i++) {
+    b_mix += y[i] * b_i[i];
+    for (let j = 0; j < NS; j++) {
+      a_mix += y[i] * y[j] * Math.sqrt(a_i[i] * a_i[j]);
+    }
+  }
+
+  const A = a_mix * P / (R * R * T * T);
+  const B = b_mix * P / (R * T);
+
+  return { a_i, b_i, a_mix, b_mix, A, B };
+}
+
+// =========================================================================
+// Cubic equation solver for Z (compressibility factor)
+// PR: Z^3 - (1-B)Z^2 + (A-3B^2-2B)Z - (AB-B^2-B^3) = 0
+// RK: Z^3 - Z^2 + (A-B-B^2)Z - AB = 0
+// =========================================================================
+function solveCubicZ(A, B, eosType) {
+  let c2, c1, c0;
+  if (eosType === "pr") {
+    c2 = -(1 - B);
+    c1 = A - 3*B*B - 2*B;
+    c0 = -(A*B - B*B - B*B*B);
+  } else {  // RK
+    c2 = -1;
+    c1 = A - B - B*B;
+    c0 = -A*B;
+  }
+
+  // Cardano's formula
+  const p = c1 - c2*c2/3;
+  const q = 2*c2*c2*c2/27 - c2*c1/3 + c0;
+  const D = q*q/4 + p*p*p/27;
+
+  let roots = [];
+  if (D > 0) {
+    // One real root
+    const sqrtD = Math.sqrt(D);
+    const u = Math.cbrt(-q/2 + sqrtD);
+    const v = Math.cbrt(-q/2 - sqrtD);
+    roots.push(u + v - c2/3);
+  } else {
+    // Three real roots
+    const r = Math.sqrt(-p*p*p/27);
+    const phi = Math.acos(-q/(2*r));
+    const t = 2 * Math.cbrt(r);
+    for (let k = 0; k < 3; k++) {
+      roots.push(t * Math.cos((phi + 2*k*Math.PI)/3) - c2/3);
+    }
+  }
+
+  // Filter valid roots (Z > B for physical meaning)
+  roots = roots.filter(z => z > B && z > 0);
+
+  if (roots.length === 0) return 1.0;  // Fallback to ideal
+
+  // Return largest root (vapor-like)
+  return Math.max(...roots);
+}
+
+// =========================================================================
+// Fugacity coefficients
+// =========================================================================
+function calcFugacityCoefficients(species, T, P, y, eosType) {
+  if (eosType === "ideal") {
+    return { phi: new Array(species.length).fill(1.0), Z: 1.0 };
+  }
+
+  const NS = species.length;
+  let params, Z;
+
+  if (eosType === "pr") {
+    params = calcPRParams(species, T, P, y);
+    Z = solveCubicZ(params.A, params.B, "pr");
+  } else {  // rk
+    params = calcRKParams(species, T, P, y);
+    Z = solveCubicZ(params.A, params.B, "rk");
+  }
+
+  const { a_i, b_i, a_mix, b_mix, A, B } = params;
+  const phi = new Array(NS);
+
+  for (let i = 0; i < NS; i++) {
+    // Partial a_i mixing
+    let sum_a = 0;
+    for (let j = 0; j < NS; j++) {
+      sum_a += y[j] * Math.sqrt(a_i[i] * a_i[j]);
+    }
+
+    if (eosType === "pr") {
+      // PR fugacity coefficient
+      const sqrt2 = Math.sqrt(2);
+      const term1 = b_i[i] / b_mix * (Z - 1);
+      const term2 = Math.log(Z - B);
+      const term3 = A / (2 * sqrt2 * B) * (2 * sum_a / a_mix - b_i[i] / b_mix);
+      const term4 = Math.log((Z + (1 + sqrt2) * B) / (Z + (1 - sqrt2) * B));
+      phi[i] = Math.exp(term1 - term2 - term3 * term4);
+    } else {  // RK
+      // RK fugacity coefficient
+      const term1 = b_i[i] / b_mix * (Z - 1);
+      const term2 = Math.log(Z - B);
+      const term3 = A / B * (2 * sum_a / a_mix - b_i[i] / b_mix);
+      const term4 = Math.log(1 + B / Z);
+      phi[i] = Math.exp(term1 - term2 - term3 * term4);
+    }
+
+    // Clamp to reasonable range
+    if (!isFinite(phi[i]) || phi[i] < 0.01) phi[i] = 1.0;
+    if (phi[i] > 100) phi[i] = 1.0;
+  }
+
+  return { phi, Z };
+}
+
+// =========================================================================
+// Check for phase warning (condensation)
+// =========================================================================
+function checkPhaseWarning(species, T, P, y) {
+  const warnings = [];
+  for (let i = 0; i < species.length; i++) {
+    const sp = species[i];
+    if (ANTOINE_COEFFS[sp] && y[i] > 0.001) {
+      const ant = ANTOINE_COEFFS[sp];
+      if (T >= ant.Tmin && T <= ant.Tmax + 100) {
+        const Psat = Math.pow(10, ant.A - ant.B / (ant.C + T));  // Pa
+        const partialP = y[i] * P;
+        if (partialP > Psat * 0.9) {
+          warnings.push(`${sp}: partial P (${(partialP/1e6).toFixed(3)} MPa) ≈ Psat (${(Psat/1e6).toFixed(3)} MPa)`);
+        }
+      }
+    }
+  }
+  return warnings;
 }
 
 // =========================================================================
@@ -279,7 +536,7 @@ function solveLinear(A, b) {
 // Variables: y_i = ln(n_i), lambda_j (element potentials)
 //
 // KKT conditions:
-//   F_i = g0_i + y_i - ln(nTot) + lnPr - sum_j(lam_j * a_ij) = 0
+//   F_i = g0_i + y_i - ln(nTot) + lnPr + ln(phi_i) - sum_j(lam_j * a_ij) = 0
 //   G_j = sum_i(a_ij * n_i) - b_j = 0
 //
 // Jacobian: [I - n*n^T/nTot^2   -A^T    ] [dy  ]   [-F]
@@ -287,7 +544,7 @@ function solveLinear(A, b) {
 //
 // Advantage: Hessian has O(n_i) terms, not O(1/n_i), so well-conditioned.
 // =========================================================================
-function gibbsEquilibrium(speciesList, inletMoles, T_K, P_Pa) {
+function gibbsEquilibrium(speciesList, inletMoles, T_K, P_Pa, eosType = "ideal") {
   const P_ref = 101325.0;
   const NS = speciesList.length;
 
@@ -326,6 +583,8 @@ function gibbsEquilibrium(speciesList, inletMoles, T_K, P_Pa) {
   const TOL = 1e-10;
   let converged = false;
   let iterations = 0;
+  let lastPhi = new Array(NS).fill(1.0);
+  let lastZ = 1.0;
 
   for (let iter = 0; iter < MAX_ITER; iter++) {
     iterations = iter + 1;
@@ -335,10 +594,20 @@ function gibbsEquilibrium(speciesList, inletMoles, T_K, P_Pa) {
     const nTot = n.reduce((s, v) => s + v, 0);
     const lnNTot = Math.log(nTot);
 
+    // Mole fractions
+    const moleFrac = n.map(v => v / nTot);
+
+    // Fugacity coefficients (update every 5 iterations to reduce cost)
+    if (iter % 5 === 0 || iter < 3) {
+      const fug = calcFugacityCoefficients(speciesList, T_K, P_Pa, moleFrac, eosType);
+      lastPhi = fug.phi;
+      lastZ = fug.Z;
+    }
+
     // Residuals F_i, G_j
     const F = new Array(NS);
     for (let i = 0; i < NS; i++) {
-      F[i] = g0[i] + y[i] - lnNTot + lnPr;
+      F[i] = g0[i] + y[i] - lnNTot + lnPr + Math.log(lastPhi[i]);
       for (let j = 0; j < NE; j++) F[i] -= lam[j] * aij[i][j];
     }
 
@@ -406,6 +675,9 @@ function gibbsEquilibrium(speciesList, inletMoles, T_K, P_Pa) {
   const nTotFinal = n.reduce((s, v) => s + v, 0);
   const yFinal = n.map(v => nTotFinal > 0 ? v / nTotFinal : 0);
 
+  // Final fugacity coefficients
+  const finalFug = calcFugacityCoefficients(speciesList, T_K, P_Pa, yFinal, eosType);
+
   return {
     species: speciesList,
     outletMoles: n,
@@ -413,6 +685,9 @@ function gibbsEquilibrium(speciesList, inletMoles, T_K, P_Pa) {
     nTotal: nTotFinal,
     converged,
     iterations,
+    Z: finalFug.Z,
+    phi: finalFug.phi,
+    eosType,
   };
 }
 
@@ -452,6 +727,12 @@ function applyPreset(name) {
   let enable = {};
   let T, P, Pu;
   switch(name) {
+    case "dme":
+      enable = {H2:2, CO:1, CH3OH:0, H2O:0, CO2:0, CH3OCH3:0};
+      T = 150; P = 10; Pu = "MPaG"; break;
+    case "meoh":
+      enable = {H2:2, CO:1, CH3OH:0, H2O:0, CO2:0};
+      T = 150; P = 5; Pu = "MPaG"; break;
     case "methanation":
       enable = {H2:4, CO2:1, CO:0, H2O:0, CH4:0, "C(g)":0};
       T = 300; P = 1; Pu = "atm"; break;
@@ -461,9 +742,6 @@ function applyPreset(name) {
     case "wgs":
       enable = {H2:0, CO2:0, CO:1, H2O:1, CH4:0, "C(g)":0};
       T = 400; P = 1; Pu = "atm"; break;
-    case "meoh":
-      enable = {H2:3, CO2:1, CO:0, H2O:0, CH4:0, CH3OH:0, CH3OCH3:0, N2:0.1};
-      T = 250; P = 5; Pu = "MPa"; break;
     case "ft":
       enable = {H2:2, CO:1, CO2:0, H2O:0, CH4:0, C2H4:0, C2H6:0, CH3OH:0, CH3CHO:0, "C(g)":0};
       T = 250; P = 2; Pu = "MPa"; break;
@@ -484,11 +762,19 @@ function showError(msg) {
   el.style.display = msg ? "block" : "none";
 }
 
+function showWarning(msg) {
+  const el = document.getElementById("warning");
+  el.innerHTML = msg;
+  el.style.display = msg ? "block" : "none";
+}
+
 function calculate() {
   showError("");
+  showWarning("");
   const T_C = parseFloat(document.getElementById("temp").value);
   const P_val = document.getElementById("pval").value;
   const P_unit = document.getElementById("punit").value;
+  const eosType = document.getElementById("eos").value;
 
   if (isNaN(T_C)) { showError("Temperature is invalid."); return; }
   const T_K = T_C + 273.15;
@@ -522,16 +808,28 @@ function calculate() {
 
   // Run solver
   const t0 = performance.now();
-  const result = gibbsEquilibrium(speciesList, inletMoles, T_K, P_Pa);
+  const result = gibbsEquilibrium(speciesList, inletMoles, T_K, P_Pa, eosType);
   const elapsed = (performance.now() - t0).toFixed(1);
+
+  // Check phase warnings
+  const warnings = checkPhaseWarning(speciesList, T_K, P_Pa, result.outletFractions);
+  if (warnings.length > 0) {
+    showWarning("⚠️ Near condensation: " + warnings.join("; "));
+  }
 
   // Display result
   const resultCard = document.getElementById("result-card");
   resultCard.style.display = "block";
 
+  // EOS badge
+  const eosNames = { ideal: "Ideal Gas", pr: "Peng-Robinson", rk: "Redlich-Kwong" };
+  const eosClass = { ideal: "eos-ideal", pr: "eos-pr", rk: "eos-rk" };
+  const eosBadge = `<span class="eos-badge ${eosClass[eosType]}">${eosNames[eosType]}</span>`;
+  const zDisplay = eosType !== "ideal" ? ` &nbsp; <strong>Z:</strong> ${result.Z.toFixed(4)}` : "";
+
   const P_atm = P_Pa / 101325.0;
   document.getElementById("result-cond").innerHTML =
-    `<strong>T:</strong> ${T_C} &deg;C (${T_K.toFixed(2)} K) &nbsp; <strong>P:</strong> ${P_atm.toFixed(3)} atm (${P_Pa.toFixed(0)} Pa)`;
+    `<strong>T:</strong> ${T_C} &deg;C (${T_K.toFixed(2)} K) &nbsp; <strong>P:</strong> ${P_atm.toFixed(3)} atm (${P_Pa.toFixed(0)} Pa)${zDisplay}${eosBadge}`;
 
   const tbody = document.getElementById("result-body");
   tbody.innerHTML = "";
@@ -546,6 +844,7 @@ function calculate() {
     const inF = inletFrac[i] * 100;
     const outM = result.outletMoles[i];
     const outF = result.outletFractions[i] * 100;
+    const phi = result.phi[i];
     const isZero = outM < 1e-8 && inM < 1e-8;
     const tr = document.createElement("tr");
     if (isZero) tr.className = "zero";
@@ -554,7 +853,8 @@ function calculate() {
       `<td>${inM.toFixed(4)}</td>` +
       `<td>${inF.toFixed(2)}</td>` +
       `<td>${outM < 0.0001 && outM > 0 ? outM.toExponential(4) : outM.toFixed(6)}</td>` +
-      `<td>${outF.toFixed(4)}</td>`;
+      `<td>${outF.toFixed(4)}</td>` +
+      `<td>${phi.toFixed(4)}</td>`;
     tbody.appendChild(tr);
   }
 
@@ -563,7 +863,7 @@ function calculate() {
   trTotal.className = "total";
   trTotal.innerHTML =
     `<td>Total</td><td>${totalInlet.toFixed(4)}</td><td>100.00</td>` +
-    `<td>${outTotal.toFixed(6)}</td><td>100.0000</td>`;
+    `<td>${outTotal.toFixed(6)}</td><td>100.0000</td><td>-</td>`;
   tbody.appendChild(trTotal);
 
   document.getElementById("solver-info").textContent =
@@ -617,6 +917,12 @@ function updateConvKeySelect() {
   const sel = document.getElementById("conv-key");
   const { speciesList, inletMoles } = getActiveSpeciesAndInlet();
   sel.innerHTML = "";
+  // Add "All" option first
+  const optAll = document.createElement("option");
+  optAll.value = "__all__";
+  optAll.textContent = "All reactants";
+  sel.appendChild(optAll);
+  // Add individual reactants
   for (let i = 0; i < speciesList.length; i++) {
     if (inletMoles[i] > 0) {
       const opt = document.createElement("option");
@@ -655,9 +961,12 @@ function runSweep() {
   }
 
   const convKey = document.getElementById("conv-key").value;
-  const convKeyIdx = speciesList.indexOf(convKey);
-  if (convKeyIdx < 0 || inletMoles[convKeyIdx] <= 0) {
-    showError("Select a valid key reactant with inlet > 0."); return;
+  const isAllReactants = (convKey === "__all__");
+  if (!isAllReactants) {
+    const convKeyIdx = speciesList.indexOf(convKey);
+    if (convKeyIdx < 0 || inletMoles[convKeyIdx] <= 0) {
+      showError("Select a valid key reactant with inlet > 0."); return;
+    }
   }
 
   // Carbon count per species
@@ -671,6 +980,8 @@ function runSweep() {
   const progEl = document.getElementById("plot-progress");
   progEl.textContent = `Calculating 0 / ${totalCalcs} ...`;
 
+  const eosType = document.getElementById("plot-eos").value;
+
   // Run asynchronously to allow UI update
   setTimeout(() => {
     // Results indexed by [pIdx][tIdx]
@@ -681,7 +992,7 @@ function runSweep() {
       const pResults = [];
       for (let ti = 0; ti < temps.length; ti++) {
         const T_K = temps[ti] + 273.15;
-        const r = gibbsEquilibrium(speciesList, inletMoles, T_K, pressureList[pi].Pa);
+        const r = gibbsEquilibrium(speciesList, inletMoles, T_K, pressureList[pi].Pa, eosType);
         pResults.push(r);
         count++;
       }
@@ -692,10 +1003,13 @@ function runSweep() {
     // --- Build Conversion traces ---
     const convTraces = [];
     // For each reactant (inlet > 0), for each pressure
+    // If specific key selected, only plot that one; if "all", plot all reactants
     for (let pi = 0; pi < pressureList.length; pi++) {
       for (let si = 0; si < speciesList.length; si++) {
         if (inletMoles[si] <= 0) continue;
         const sp = speciesList[si];
+        // Skip if not selected key (unless "all" is selected)
+        if (!isAllReactants && sp !== convKey) continue;
         const display = DISPLAY_NAMES[sp] || sp;
         const yData = temps.map((_, ti) => {
           const out = results[pi][ti].outletMoles[si];
@@ -787,6 +1101,26 @@ function runSweep() {
       margin: { t: 50, b: 80 },
     }, { responsive: true });
 
+    // --- Build Z factor traces ---
+    const zTraces = [];
+    for (let pi = 0; pi < pressureList.length; pi++) {
+      const yData = temps.map((_, ti) => results[pi][ti].Z);
+      zTraces.push({
+        x: temps, y: yData,
+        name: pressureList[pi].label,
+        mode: "lines", line: { dash: DASH_STYLES[pi % DASH_STYLES.length], width: 2 },
+      });
+    }
+
+    const eosNames = { ideal: "Ideal Gas", pr: "Peng-Robinson", rk: "Redlich-Kwong" };
+    Plotly.newPlot("tab-z", zTraces, {
+      title: `Compressibility Factor (${eosNames[eosType]})`,
+      xaxis: { title: "Temperature [°C]" },
+      yaxis: { title: "Z" },
+      legend: { orientation: "h", y: -0.25 },
+      margin: { t: 50, b: 80 },
+    }, { responsive: true });
+
   }, 50);
 }
 
@@ -794,7 +1128,7 @@ function runSweep() {
 // Init
 // =========================================================================
 buildUI();
-applyPreset("methanation");
+applyPreset("dme");
 
 // Add default pressure from main conditions
 addPressure();
