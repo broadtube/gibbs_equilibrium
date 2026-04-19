@@ -45,62 +45,29 @@ def parse_pressure(P) -> float:
 
 
 # ---------------------------------------------------------------------------
-# gri30.yamlに無い化学種のNASA7多項式データ (NIST/Burcat)
+# Cantera同梱 nasa_gas.yaml / gri30.yaml にも無い化学種のNASA7多項式データ
+#
+# CH3OCH3, CH3COOH, C2H5OH, HCOOH は Cantera同梱の nasa_gas.yaml
+# (NASA Glenn, McBride et al. NASA/TP-2002-211556) に収録されているため、
+# build_gas() でそちらを優先的に読み込む。ここには収録されていない種のみを
+# カスタムデータとして保持する。
 # ---------------------------------------------------------------------------
 CUSTOM_SPECIES_DATA = {
-    "CH3OCH3": {
-        "composition": {"C": 2, "H": 6, "O": 1},
-        "note": "Dimethyl ether - Burcat",
-        "temperature-ranges": [200.0, 1000.0, 6000.0],
-        "data": [
-            [5.46595502, -3.78307493e-03, 5.80104975e-05, -6.61704995e-08,
-             2.36675037e-11, -2.51269095e+04, -7.41883739e-01],
-            [5.52256973, 1.51516598e-02, -5.31000340e-06, 8.43166522e-10,
-             -4.98976297e-14, -2.63076590e+04, -5.97699961e+00],
-        ],
-    },
-    "CH3COOH": {
-        "composition": {"C": 2, "H": 4, "O": 2},
-        "note": "Acetic acid - Burcat",
-        "temperature-ranges": [200.0, 1000.0, 6000.0],
-        "data": [
-            [3.40447203, 7.63843891e-03, 4.16989270e-05, -5.97498790e-08,
-             2.37498760e-11, -5.34686310e+04, 9.95028030e+00],
-            [6.33684770, 1.28429920e-02, -4.62915530e-06, 7.49795670e-10,
-             -4.50063450e-14, -5.47041050e+04, -7.71503300e+00],
-        ],
-    },
+    # Methyl acetate: Burcat's Third Millennium Thermodynamic Database
+    # エントリ "C3H6O2 Meacetate T10/07" より。
+    # 出典: https://burcat.technion.ac.il/ (BURCAT.THR.txt)
+    # ミラー: https://github.com/mutationpp/Mutationpp/blob/master/data/thermo/burcat_therm.dat
+    #         https://github.com/OpenFOAM/OpenFOAM-2.2.x/blob/master/etc/thermoData/therm.dat
+    # 参照: Felsmann et al. 2016, Proc. Combust. Inst. 36 (supplementary YAMLでも同一係数)
     "CH3COOCH3": {
         "composition": {"C": 3, "H": 6, "O": 2},
-        "note": "Methyl acetate - Burcat",
+        "note": "Methyl acetate - Burcat T10/07",
         "temperature-ranges": [200.0, 1000.0, 6000.0],
         "data": [
-            [3.23511860, 1.39174410e-02, 5.23453750e-05, -7.82097280e-08,
-             3.18429160e-11, -5.14816780e+04, 1.16177310e+01],
-            [8.54553130, 1.63798170e-02, -5.82757620e-06, 9.34218900e-10,
-             -5.56766010e-14, -5.35253830e+04, -1.93270130e+01],
-        ],
-    },
-    "C2H5OH": {
-        "composition": {"C": 2, "H": 6, "O": 1},
-        "note": "Ethanol - Burcat",
-        "temperature-ranges": [200.0, 1000.0, 6000.0],
-        "data": [
-            [4.85869570, -3.74017260e-03, 6.95554680e-05, -8.86547960e-08,
-             3.51688360e-11, -2.99961320e+04, 4.80185450e+00],
-            [6.56243650, 1.52042120e-02, -5.38967830e-06, 8.62524870e-10,
-             -5.12299630e-14, -3.15254870e+04, -9.47302050e+00],
-        ],
-    },
-    "HCOOH": {
-        "composition": {"C": 1, "H": 2, "O": 2},
-        "note": "Formic acid - Burcat",
-        "temperature-ranges": [200.0, 1000.0, 6000.0],
-        "data": [
-            [1.43548185, 1.63363016e-02, -7.06729710e-06, -2.29787832e-09,
-             2.06826580e-12, -4.64616264e+04, 1.74427640e+01],
-            [4.61383160, 6.44963710e-03, -2.29082880e-06, 3.67147470e-10,
-             -2.18738860e-14, -4.74299100e+04, 6.47163020e-01],
+            [7.18744749e+00, -6.29221513e-03, 8.17059377e-05, -9.82940778e-08,
+             3.73744521e-11, -5.23417155e+04, -3.24161798e+00],
+            [8.38776809e+00, 1.90836514e-02, -6.82197320e-06, 1.09765423e-09,
+             -6.55561842e-14, -5.40805971e+04, -1.64156253e+01],
         ],
     },
 }
@@ -111,37 +78,49 @@ SPECIES_ALIASES = {
     "CH2O": "CH2O",       # そのまま
 }
 
+# 固体炭素 (graphite) の種名。含まれていれば MultiPhase 計算に切り替える。
+# thermo データは Cantera 同梱 graphite.yaml / nasa_condensed.yaml (JANAF X 4/83)。
+CARBON_PHASE = "C(gr)"
+
 
 # ---------------------------------------------------------------------------
 # Cantera Solutionの構築
 # ---------------------------------------------------------------------------
 def build_gas(species: list[str]) -> ct.Solution:
-    """指定された化学種を含むCantera Solutionを構築する。
+    """指定された気相化学種を含むCantera Solutionを構築する。
 
-    gri30.yamlに含まれる種はそこから取得し、含まれない種は
-    カスタムNASA7データから構築する。
+    優先順位: gri30.yaml → nasa_gas.yaml (NASA Glenn) → CUSTOM_SPECIES_DATA。
+    C(gr) は気相ではないため本関数からは除外される（呼び出し側で処理）。
     """
-    # gri30から利用可能な種を取得
     gri30_species = {s.name: s for s in ct.Species.list_from_file("gri30.yaml")}
+    nasa_species = {s.name: s for s in ct.Species.list_from_file("nasa_gas.yaml")}
 
     selected = []
     resolved_names = []  # Cantera内部での名前
 
     for sp in species:
+        if sp == CARBON_PHASE:
+            continue  # 固体相は別フェーズで扱う
+
         # エイリアス解決
         cantera_name = SPECIES_ALIASES.get(sp, sp)
 
         if cantera_name in gri30_species:
             selected.append(gri30_species[cantera_name])
             resolved_names.append(cantera_name)
+        elif sp in nasa_species:
+            selected.append(nasa_species[sp])
+            resolved_names.append(sp)
         elif sp in CUSTOM_SPECIES_DATA:
-            # カスタム種を構築
+            # カスタム種を構築。
+            # Cantera NasaPoly2 の係数配列順序は [Tmid, high(7), low(7)]
+            # （低温が先ではないので注意）。
             data = CUSTOM_SPECIES_DATA[sp]
             thermo = ct.NasaPoly2(
                 data["temperature-ranges"][0],
                 data["temperature-ranges"][2],
                 ct.one_atm,
-                np.concatenate([[data["temperature-ranges"][1]], data["data"][0], data["data"][1]]),
+                np.concatenate([[data["temperature-ranges"][1]], data["data"][1], data["data"][0]]),
             )
             ct_sp = ct.Species(sp, data["composition"])
             ct_sp.thermo = thermo
@@ -149,7 +128,7 @@ def build_gas(species: list[str]) -> ct.Solution:
             resolved_names.append(sp)
         else:
             raise ValueError(
-                f"化学種 '{sp}' はgri30.yamlにもカスタムデータにも見つかりません。"
+                f"化学種 '{sp}' はgri30.yaml / nasa_gas.yaml / カスタムデータに見つかりません。"
             )
 
     gas = ct.Solution(thermo="ideal-gas", species=selected)
@@ -197,8 +176,9 @@ def gibbs_equilibrium(
     P_pascal = parse_pressure(P)
 
     gas, resolved_names = build_gas(species)
+    has_carbon = CARBON_PHASE in species
 
-    # 入口組成を設定
+    # 入口組成を設定 (species順)
     inlet_array = np.zeros(len(species))
     for i, sp in enumerate(species):
         inlet_array[i] = inlet_moles.get(sp, 0.0)
@@ -209,19 +189,51 @@ def gibbs_equilibrium(
 
     inlet_fractions = inlet_array / total_inlet
 
-    # Cantera状態設定
-    composition = {rn: f for rn, f in zip(resolved_names, inlet_fractions) if f > 0}
-    gas.TPX = T_kelvin, P_pascal, composition
-
-    # Quantity で平衡計算（モル数保存を追跡）
-    q = ct.Quantity(gas, moles=total_inlet / 1000.0)  # mol → kmol
-    q.equilibrate("TP")
-
-    # 平衡後のモル流量を取得
     outlet_moles = np.zeros(len(species))
-    for i, rn in enumerate(resolved_names):
-        idx = gas.species_index(rn)
-        outlet_moles[i] = q.moles * q.X[idx] * 1000.0  # kmol → mol
+
+    if not has_carbon:
+        # 気相単一フェーズ (従来パス)
+        composition = {rn: f for rn, f in zip(resolved_names, inlet_fractions) if f > 0}
+        gas.TPX = T_kelvin, P_pascal, composition
+        q = ct.Quantity(gas, moles=total_inlet / 1000.0)  # mol → kmol
+        q.equilibrate("TP")
+
+        for i, sp in enumerate(species):
+            cantera_name = SPECIES_ALIASES.get(sp, sp)
+            idx = gas.species_index(cantera_name)
+            outlet_moles[i] = q.moles * q.X[idx] * 1000.0  # kmol → mol
+    else:
+        # 気相 + C(gr) 固体相の MultiPhase 平衡。
+        # Cantera 同梱 graphite.yaml (固定化学量相、C(gr) 単独) を使用。
+        carbon = ct.Solution("graphite.yaml")
+        gas.TP = T_kelvin, P_pascal
+        carbon.TP = T_kelvin, P_pascal
+        mix = ct.Mixture([gas, carbon])
+        mix.T = T_kelvin
+        mix.P = P_pascal
+
+        # 入口モル数を Mixture にセット (kmol単位)
+        moles = np.zeros(mix.n_species)
+        for sp, v in zip(species, inlet_array):
+            if v <= 0:
+                continue
+            if sp == CARBON_PHASE:
+                moles[mix.species_index(1, "C(gr)")] = v / 1000.0
+            else:
+                cantera_name = SPECIES_ALIASES.get(sp, sp)
+                moles[mix.species_index(0, cantera_name)] = v / 1000.0
+        mix.species_moles = moles
+
+        # VCS algorithm は固体相の on/off を含む MultiPhase で 'gibbs' より堅牢。
+        mix.equilibrate("TP", solver="vcs", max_steps=500)
+
+        for i, sp in enumerate(species):
+            if sp == CARBON_PHASE:
+                idx = mix.species_index(1, "C(gr)")
+            else:
+                cantera_name = SPECIES_ALIASES.get(sp, sp)
+                idx = mix.species_index(0, cantera_name)
+            outlet_moles[i] = mix.species_moles[idx] * 1000.0  # kmol → mol
 
     outlet_total = outlet_moles.sum()
     outlet_fractions = outlet_moles / outlet_total if outlet_total > 0 else outlet_moles
@@ -278,7 +290,7 @@ if __name__ == "__main__":
     # CO2 + 4H2 → CH4 + 2H2O
     print("\n【例1】CO2メタネーション (300°C, 1atm)")
     result = gibbs_equilibrium(
-        species=["H2", "CO2", "CO", "H2O", "CH4", "C"],
+        species=["H2", "CO2", "CO", "H2O", "CH4", "C(gr)"],
         inlet_moles={"H2": 4, "CO2": 1},
         T_celsius=300,
         P="1atm",
@@ -289,7 +301,7 @@ if __name__ == "__main__":
     # CH4 + H2O → CO + 3H2
     print("\n【例2】メタン水蒸気改質 (850°C, 2MPaG)")
     result = gibbs_equilibrium(
-        species=["H2", "CO2", "CO", "H2O", "CH4", "C"],
+        species=["H2", "CO2", "CO", "H2O", "CH4", "C(gr)"],
         inlet_moles={"CH4": 1, "H2O": 3},
         T_celsius=850,
         P="2MPaG",
@@ -299,7 +311,7 @@ if __name__ == "__main__":
     # 使用例: メタノール合成 (全化学種)
     # CO2 + 3H2 → CH3OH + H2O
     ALL_SPECIES = [
-        "H2", "CO2", "CO", "C", "H2O", "CH4",
+        "H2", "CO2", "CO", "C(gr)", "H2O", "CH4",
         "CH3OH", "CH3OCH3", "CH3CHO", "CH3COOH", "CH3COOCH3",
         "HCHO", "C2H6", "C2H4", "C2H5OH", "HCOOH",
         "N2",
@@ -317,7 +329,7 @@ if __name__ == "__main__":
     # CO + H2O → CO2 + H2
     print("\n【例4】水性ガスシフト (400°C, 1atm)")
     result = gibbs_equilibrium(
-        species=["H2", "CO2", "CO", "H2O", "CH4", "C"],
+        species=["H2", "CO2", "CO", "H2O", "CH4", "C(gr)"],
         inlet_moles={"CO": 1, "H2O": 1},
         T_celsius=400,
         P="1atm",

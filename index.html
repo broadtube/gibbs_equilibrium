@@ -208,35 +208,57 @@ button.btn-plot:hover { background: #219a52; }
 
 // =========================================================================
 // NASA7 thermodynamic data
+//
+// Sources (per species):
+//  - H2, CO2, CO, H2O, CH4, CH3OH, CH3CHO, HCHO, C2H6, C2H4, N2:
+//      GRI-Mech 3.0 (Cantera gri30.yaml) — 200/300–1000–3500/5000 K
+//  - CH3OCH3 (L12/92), CH3COOH (L 8/88), C2H5OH (L 8/88), HCOOH (L 8/88):
+//      NASA Glenn (Cantera nasa_gas.yaml, McBride et al. NASA/TP-2002-211556)
+//      — 200–1000–6000 K
+//  - CH3COOCH3:
+//      Burcat's Third Millennium Database, entry "C3H6O2 Meacetate T10/07"
+//      https://burcat.technion.ac.il/ (BURCAT.THR.txt)
+//      mirror: github.com/mutationpp/Mutationpp data/thermo/burcat_therm.dat
+//      — 200–1000–6000 K
+//  - C(gr) [phase='solid']:
+//      NASA Glenn condensed (Cantera graphite.yaml / nasa_condensed.yaml,
+//      JANAF X 4/83, Chase 1983) — 200–1000–5000 K
+//      activity ≡ 1 (pure solid phase). 析炭判定用。
 // =========================================================================
 const SPECIES_DB = {
   "H2":       { comp:{H:2}, Tr:[200,1000,3500], lo:[2.34433112,0.00798052075,-1.9478151e-05,2.01572094e-08,-7.37611761e-12,-917.935173,0.683010238], hi:[3.3372792,-4.94024731e-05,4.99456778e-07,-1.79566394e-10,2.00255376e-14,-950.158922,-3.20502331] },
   "CO2":      { comp:{C:1,O:2}, Tr:[200,1000,3500], lo:[2.35677352,0.00898459677,-7.12356269e-06,2.45919022e-09,-1.43699548e-13,-48371.9697,9.90105222], hi:[3.85746029,0.00441437026,-2.21481404e-06,5.23490188e-10,-4.72084164e-14,-48759.166,2.27163806] },
   "CO":       { comp:{C:1,O:1}, Tr:[200,1000,3500], lo:[3.57953347,-0.00061035368,1.01681433e-06,9.07005884e-10,-9.04424499e-13,-14344.086,3.50840928], hi:[2.71518561,0.00206252743,-9.98825771e-07,2.30053008e-10,-2.03647716e-14,-14151.8724,7.81868772] },
-  "C(g)":     { comp:{C:1}, Tr:[200,1000,3500], lo:[2.55423955,-0.000321537724,7.33792245e-07,-7.32234889e-10,2.66521446e-13,85443.8832,4.53130848], hi:[2.49266888,4.79889284e-05,-7.2433502e-08,3.74291029e-11,-4.87277893e-15,85451.2953,4.80150373] },
+  // C(gr): solid graphite, activity ≡ 1 (handled specially in gibbsEquilibrium)
+  "C(gr)":    { comp:{C:1}, phase:"solid", Tr:[200,1000,5000], lo:[-0.310872072,0.00440353686,1.90394118e-06,-6.38546966e-09,2.98964248e-12,-108.650794,1.11382953], hi:[1.45571829,0.00171702216,-6.97562786e-07,1.35277032e-10,-9.67590652e-15,-695.138814,-8.52583033] },
   "H2O":      { comp:{H:2,O:1}, Tr:[200,1000,3500], lo:[4.19864056,-0.0020364341,6.52040211e-06,-5.48797062e-09,1.77197817e-12,-30293.7267,-0.849032208], hi:[3.03399249,0.00217691804,-1.64072518e-07,-9.7041987e-11,1.68200992e-14,-30004.2971,4.9667701] },
   "CH4":      { comp:{C:1,H:4}, Tr:[200,1000,3500], lo:[5.14987613,-0.0136709788,4.91800599e-05,-4.84743026e-08,1.66693956e-11,-10246.6476,-4.64130376], hi:[0.074851495,0.0133909467,-5.73285809e-06,1.22292535e-09,-1.0181523e-13,-9468.34459,18.437318] },
   "CH3OH":    { comp:{C:1,H:4,O:1}, Tr:[200,1000,3500], lo:[5.71539582,-0.0152309129,6.52441155e-05,-7.10806889e-08,2.61352698e-11,-25642.7656,-1.50409823], hi:[1.78970791,0.0140938292,-6.36500835e-06,1.38171085e-09,-1.1706022e-13,-25374.8747,14.5023623] },
-  "CH3OCH3":  { comp:{C:2,H:6,O:1}, Tr:[200,1000,6000], lo:[5.46595502,-3.78307493e-03,5.80104975e-05,-6.61704995e-08,2.36675037e-11,-2.51269095e+04,-7.41883739e-01], hi:[5.52256973,1.51516598e-02,-5.31000340e-06,8.43166522e-10,-4.98976297e-14,-2.63076590e+04,-5.97699961e+00] },
+  // CH3OCH3: NASA Glenn (Cantera nasa_gas.yaml, note "L12/92")
+  "CH3OCH3":  { comp:{C:2,H:6,O:1}, Tr:[200,1000,6000], lo:[5.30562279,-0.00214254272,5.30873244e-05,-6.23147136e-08,2.30731036e-11,-23986.6295,0.713264209], hi:[5.64844183,0.0163381899,-5.86802367e-06,9.46836869e-10,-5.66504738e-14,-25107.469,-5.96264939] },
   "CH3CHO":   { comp:{C:2,H:4,O:1}, Tr:[200,1000,6000], lo:[4.7294595,-0.0031932858,4.7534921e-05,-5.7458611e-08,2.1931112e-11,-21572.878,4.1030159], hi:[5.4041108,0.011723059,-4.2263137e-06,6.8372451e-10,-4.0984863e-14,-22593.122,-3.4807917] },
-  "CH3COOH":  { comp:{C:2,H:4,O:2}, Tr:[200,1000,6000], lo:[3.40447203,7.63843891e-03,4.16989270e-05,-5.97498790e-08,2.37498760e-11,-5.34686310e+04,9.95028030e+00], hi:[6.33684770,1.28429920e-02,-4.62915530e-06,7.49795670e-10,-4.50063450e-14,-5.47041050e+04,-7.71503300e+00] },
-  "CH3COOCH3":{ comp:{C:3,H:6,O:2}, Tr:[200,1000,6000], lo:[3.23511860,1.39174410e-02,5.23453750e-05,-7.82097280e-08,3.18429160e-11,-5.14816780e+04,1.16177310e+01], hi:[8.54553130,1.63798170e-02,-5.82757620e-06,9.34218900e-10,-5.56766010e-14,-5.35253830e+04,-1.93270130e+01] },
+  // CH3COOH: NASA Glenn (Cantera nasa_gas.yaml, note "L 8/88")
+  "CH3COOH":  { comp:{C:2,H:4,O:2}, Tr:[200,1000,6000], lo:[2.78936844,0.0100001016,3.42557978e-05,-5.09017919e-08,2.06217504e-11,-53475.2292,14.1059504], hi:[7.67083678,0.0135152695,-5.25874688e-06,8.93185062e-10,-5.53180891e-14,-55756.0971,-15.467659] },
+  // CH3COOCH3: Burcat T10/07 "Meacetate" (not in Cantera bundled YAMLs)
+  "CH3COOCH3":{ comp:{C:3,H:6,O:2}, Tr:[200,1000,6000], lo:[7.18744749,-6.29221513e-03,8.17059377e-05,-9.82940778e-08,3.73744521e-11,-5.23417155e+04,-3.24161798e+00], hi:[8.38776809,1.90836514e-02,-6.82197320e-06,1.09765423e-09,-6.55561842e-14,-5.40805971e+04,-1.64156253e+01] },
   "HCHO":     { comp:{C:1,H:2,O:1}, Tr:[200,1000,3500], lo:[4.79372315,-0.00990833369,3.73220008e-05,-3.79285261e-08,1.31772652e-11,-14308.9567,0.6028129], hi:[1.76069008,0.00920000082,-4.42258813e-06,1.00641212e-09,-8.8385564e-14,-13995.8323,13.656323] },
   "C2H6":     { comp:{C:2,H:6}, Tr:[200,1000,3500], lo:[4.29142492,-0.0055015427,5.99438288e-05,-7.08466285e-08,2.68685771e-11,-11522.2055,2.66682316], hi:[1.0718815,0.0216852677,-1.00256067e-05,2.21412001e-09,-1.9000289e-13,-11426.3932,15.1156107] },
   "C2H4":     { comp:{C:2,H:4}, Tr:[200,1000,3500], lo:[3.95920148,-0.00757052247,5.70990292e-05,-6.91588753e-08,2.69884373e-11,5089.77593,4.09733096], hi:[2.03611116,0.0146454151,-6.71077915e-06,1.47222923e-09,-1.25706061e-13,4939.88614,10.3053693] },
-  "C2H5OH":   { comp:{C:2,H:6,O:1}, Tr:[200,1000,6000], lo:[4.85869570,-3.74017260e-03,6.95554680e-05,-8.86547960e-08,3.51688360e-11,-2.99961320e+04,4.80185450e+00], hi:[6.56243650,1.52042120e-02,-5.38967830e-06,8.62524870e-10,-5.12299630e-14,-3.15254870e+04,-9.47302050e+00] },
-  "HCOOH":    { comp:{C:1,H:2,O:2}, Tr:[200,1000,6000], lo:[1.43548185,1.63363016e-02,-7.06729710e-06,-2.29787832e-09,2.06826580e-12,-4.64616264e+04,1.74427640e+01], hi:[4.61383160,6.44963710e-03,-2.29082880e-06,3.67147470e-10,-2.18738860e-14,-4.74299100e+04,6.47163020e-01] },
+  // C2H5OH: NASA Glenn (Cantera nasa_gas.yaml, note "L 8/88")
+  "C2H5OH":   { comp:{C:2,H:6,O:1}, Tr:[200,1000,6000], lo:[4.85868178,-0.0037400674,6.95550267e-05,-8.86541147e-08,3.5168443e-11,-29996.1309,4.80192294], hi:[6.5628977,0.0152034264,-5.38922247e-06,8.62150224e-10,-5.12824683e-14,-31525.7984,-9.47557644] },
+  // HCOOH: NASA Glenn (Cantera nasa_gas.yaml, note "L 8/88")
+  "HCOOH":    { comp:{C:1,H:2,O:2}, Tr:[200,1000,6000], lo:[3.23262453,0.00281129582,2.44034975e-05,-3.17501066e-08,1.2063166e-11,-46778.5606,9.86205647], hi:[5.69579404,0.00772237361,-3.18037808e-06,5.57949466e-10,-3.52618226e-14,-48159.9723,-6.0168008] },
   "N2":       { comp:{N:2}, Tr:[300,1000,5000], lo:[3.298677,0.0014082404,-3.963222e-06,5.641515e-09,-2.444854e-12,-1020.8999,3.950372], hi:[2.92664,0.0014879768,-5.68476e-07,1.0097038e-10,-6.753351e-15,-922.7977,5.980528] },
 };
 
 const SPECIES_ORDER = [
-  "H2","CO2","CO","C(g)","H2O","CH4",
+  "H2","CO2","CO","C(gr)","H2O","CH4",
   "CH3OH","CH3OCH3","CH3CHO","CH3COOH","CH3COOCH3",
   "HCHO","C2H6","C2H4","C2H5OH","HCOOH","N2"
 ];
 
 const DISPLAY_NAMES = {
-  "C(g)": "C (gas)",
+  "C(gr)": "C (graphite)",
   "HCHO": "HCHO (CH2O)",
 };
 
@@ -252,7 +274,7 @@ const CRITICAL_PROPS = {
   "H2":       { Tc: 33.19, Pc: 1.313e6, omega: -0.216 },
   "CO2":      { Tc: 304.21, Pc: 7.383e6, omega: 0.224 },
   "CO":       { Tc: 132.92, Pc: 3.499e6, omega: 0.048 },
-  "C(g)":     { Tc: 6810, Pc: 2.29e8, omega: 0.0 },  // estimated
+  // C(gr) は固体相 (activity=1) のため EOS 不要
   "H2O":      { Tc: 647.14, Pc: 22.064e6, omega: 0.344 },
   "CH4":      { Tc: 190.56, Pc: 4.599e6, omega: 0.011 },
   "CH3OH":    { Tc: 512.6, Pc: 8.084e6, omega: 0.565 },
@@ -539,44 +561,28 @@ function solveLinear(A, b) {
 //   F_i = g0_i + y_i - ln(nTot) + lnPr + ln(phi_i) - sum_j(lam_j * a_ij) = 0
 //   G_j = sum_i(a_ij * n_i) - b_j = 0
 //
-// Jacobian: [I - n*n^T/nTot^2   -A^T    ] [dy  ]   [-F]
-//           [A*diag(n)            0       ] [dlam] = [-G]
-//
-// Advantage: Hessian has O(n_i) terms, not O(1/n_i), so well-conditioned.
+// Solid C(gr) handling (active-set):
+//   activity ≡ 1 なので μ_C(gr) = g0_C(gr)(T)(T). 相平衡で graphite が存在するなら
+//   lam_C = g0_C(gr)(T) で pin される。まず気相のみで解き、lam_C > g0_C(gr)
+//   (= C 原子が気相中で C(gr) よりも高エネルギー = 過飽和) なら graphite を活性化
+//   し、G_C を lam_C - g0_C(gr) = 0 に差し替えて再求解。n_C(gr) は C 元素収支の
+//   残りから事後計算する。
 // =========================================================================
-function gibbsEquilibrium(speciesList, inletMoles, T_K, P_Pa, eosType = "ideal") {
+function _solveGasNewton(gasSpecies, aijGas, bTotals, T_K, P_Pa, eosType, gasInlet, fixLamC, jC) {
   const P_ref = 101325.0;
-  const NS = speciesList.length;
+  const NS = gasSpecies.length;
+  const NE = bTotals.length;
 
-  // Identify elements
-  const elemSet = new Set();
-  for (const sp of speciesList) {
-    for (const el of Object.keys(SPECIES_DB[sp].comp)) elemSet.add(el);
-  }
-  const elements = [...elemSet].sort();
-  const NE = elements.length;
-
-  // Element matrix a[i][j] = atoms of element j in species i
-  const aij = speciesList.map(sp => elements.map(el => SPECIES_DB[sp].comp[el] || 0));
-
-  // Element totals from inlet
-  const b = elements.map((_, j) => {
-    let s = 0;
-    for (let i = 0; i < NS; i++) s += aij[i][j] * inletMoles[i];
-    return s;
-  });
-
-  // g0_i = G°_i / (RT)
-  const g0 = speciesList.map(sp => nasa7_g_over_RT(sp, T_K));
+  const g0 = gasSpecies.map(sp => nasa7_g_over_RT(sp, T_K));
   const lnPr = Math.log(P_Pa / P_ref);
 
-  // Initial guess: y_i = ln(n_i), lambda_j = 0
-  const totalInlet = inletMoles.reduce((s, v) => s + v, 0);
+  const totalInlet = gasInlet.reduce((s, v) => s + v, 0);
   const y = new Array(NS);
   for (let i = 0; i < NS; i++) {
-    y[i] = Math.log(Math.max(inletMoles[i], totalInlet / NS * 0.1));
+    y[i] = Math.log(Math.max(gasInlet[i], totalInlet / NS * 0.1));
   }
   const lam = new Array(NE).fill(0);
+  if (fixLamC !== null) lam[jC] = fixLamC;
 
   const DIM = NS + NE;
   const MAX_ITER = 200;
@@ -589,45 +595,39 @@ function gibbsEquilibrium(speciesList, inletMoles, T_K, P_Pa, eosType = "ideal")
   for (let iter = 0; iter < MAX_ITER; iter++) {
     iterations = iter + 1;
 
-    // Compute n_i = exp(y_i), nTot
     const n = y.map(v => Math.exp(v));
     const nTot = n.reduce((s, v) => s + v, 0);
     const lnNTot = Math.log(nTot);
-
-    // Mole fractions
     const moleFrac = n.map(v => v / nTot);
 
-    // Fugacity coefficients (update every 5 iterations to reduce cost)
     if (iter % 5 === 0 || iter < 3) {
-      const fug = calcFugacityCoefficients(speciesList, T_K, P_Pa, moleFrac, eosType);
+      const fug = calcFugacityCoefficients(gasSpecies, T_K, P_Pa, moleFrac, eosType);
       lastPhi = fug.phi;
       lastZ = fug.Z;
     }
 
-    // Residuals F_i, G_j
     const F = new Array(NS);
     for (let i = 0; i < NS; i++) {
       F[i] = g0[i] + y[i] - lnNTot + lnPr + Math.log(lastPhi[i]);
-      for (let j = 0; j < NE; j++) F[i] -= lam[j] * aij[i][j];
+      for (let j = 0; j < NE; j++) F[i] -= lam[j] * aijGas[i][j];
     }
 
     const G = new Array(NE);
     for (let j = 0; j < NE; j++) {
-      G[j] = -b[j];
-      for (let i = 0; i < NS; i++) G[j] += aij[i][j] * n[i];
+      G[j] = -bTotals[j];
+      for (let i = 0; i < NS; i++) G[j] += aijGas[i][j] * n[i];
     }
+    // Graphite 活性時: C 元素収支を lam_C pin に差し替え
+    if (fixLamC !== null) G[jC] = lam[jC] - fixLamC;
 
-    // Check convergence
     let maxRes = 0;
     for (let i = 0; i < NS; i++) maxRes = Math.max(maxRes, Math.abs(F[i]));
-    for (let j = 0; j < NE; j++) maxRes = Math.max(maxRes, Math.abs(G[j]) / Math.max(b[j], 1e-10));
+    for (let j = 0; j < NE; j++) {
+      const scale = (fixLamC !== null && j === jC) ? 1.0 : Math.max(bTotals[j], 1e-10);
+      maxRes = Math.max(maxRes, Math.abs(G[j]) / scale);
+    }
     if (maxRes < TOL) { converged = true; break; }
 
-    // Build Jacobian (DIM x DIM) and RHS
-    // Top-left (NS x NS): dF_i/dy_k = delta_ik - n_k/nTot
-    // Top-right (NS x NE): dF_i/dlam_j = -a_ij
-    // Bottom-left (NE x NS): dG_j/dy_k = a_kj * n_k
-    // Bottom-right (NE x NE): 0
     const J = Array.from({length: DIM}, () => new Array(DIM).fill(0));
     const rhs = new Array(DIM);
 
@@ -636,58 +636,128 @@ function gibbsEquilibrium(speciesList, inletMoles, T_K, P_Pa, eosType = "ideal")
         J[i][k] = (i === k ? 1.0 : 0.0) - n[k] / nTot;
       }
       for (let j = 0; j < NE; j++) {
-        J[i][NS + j] = -aij[i][j];
+        J[i][NS + j] = -aijGas[i][j];
       }
       rhs[i] = -F[i];
     }
 
     for (let j = 0; j < NE; j++) {
       for (let k = 0; k < NS; k++) {
-        J[NS + j][k] = aij[k][j] * n[k];
+        J[NS + j][k] = aijGas[k][j] * n[k];
       }
       rhs[NS + j] = -G[j];
     }
 
-    // Solve
+    // Graphite 活性時: row (NS+jC) を "lam[jC] = fixLamC" に差し替え
+    if (fixLamC !== null) {
+      for (let k = 0; k < DIM; k++) J[NS + jC][k] = 0;
+      J[NS + jC][NS + jC] = 1;
+      rhs[NS + jC] = fixLamC - lam[jC];
+    }
+
     const delta = solveLinear(J, rhs);
     if (!delta) break;
 
-    // Damped step
     let alpha = 1.0;
-    // Limit dy to avoid huge jumps
     for (let i = 0; i < NS; i++) {
       if (Math.abs(delta[i]) > 5.0) {
         alpha = Math.min(alpha, 5.0 / Math.abs(delta[i]));
       }
     }
 
-    // Apply
     for (let i = 0; i < NS; i++) y[i] += alpha * delta[i];
     for (let j = 0; j < NE; j++) lam[j] += alpha * delta[NS + j];
   }
 
-  // Final composition
   const n = y.map(v => Math.exp(v));
   const nTot = n.reduce((s, v) => s + v, 0);
-  for (let i = 0; i < NS; i++) {
-    if (n[i] < nTot * 1e-15) n[i] = 0;
-  }
+  for (let i = 0; i < NS; i++) if (n[i] < nTot * 1e-15) n[i] = 0;
   const nTotFinal = n.reduce((s, v) => s + v, 0);
   const yFinal = n.map(v => nTotFinal > 0 ? v / nTotFinal : 0);
+  const finalFug = calcFugacityCoefficients(gasSpecies, T_K, P_Pa, yFinal, eosType);
 
-  // Final fugacity coefficients
-  const finalFug = calcFugacityCoefficients(speciesList, T_K, P_Pa, yFinal, eosType);
+  return { n, lam, converged, iterations, Z: finalFug.Z, phi: finalFug.phi };
+}
+
+function gibbsEquilibrium(speciesList, inletMoles, T_K, P_Pa, eosType = "ideal") {
+  // 気相 / 固体の分離
+  const gasIdx = [], solidIdx = [];
+  for (let i = 0; i < speciesList.length; i++) {
+    if (SPECIES_DB[speciesList[i]].phase === "solid") solidIdx.push(i);
+    else gasIdx.push(i);
+  }
+  const gasSpecies = gasIdx.map(i => speciesList[i]);
+  const gasInlet = gasIdx.map(i => inletMoles[i]);
+  const hasGraphite = solidIdx.some(i => speciesList[i] === "C(gr)");
+
+  // 元素集合 (固体含む全種から)
+  const elemSet = new Set();
+  for (const sp of speciesList) {
+    for (const el of Object.keys(SPECIES_DB[sp].comp)) elemSet.add(el);
+  }
+  const elements = [...elemSet].sort();
+  const NE = elements.length;
+  const jC = elements.indexOf("C");
+
+  // aij は気相種のみ, b は全入口モル (固体inletも含む)
+  const aijGas = gasSpecies.map(sp => elements.map(el => SPECIES_DB[sp].comp[el] || 0));
+  const b = elements.map((_, j) => {
+    let s = 0;
+    for (let i = 0; i < speciesList.length; i++) {
+      s += (SPECIES_DB[speciesList[i]].comp[elements[j]] || 0) * inletMoles[i];
+    }
+    return s;
+  });
+
+  // Pass 1: 気相のみ (graphite 非活性) で求解
+  let result = _solveGasNewton(gasSpecies, aijGas, b, T_K, P_Pa, eosType, gasInlet, null, jC);
+  let nGraphite = 0;
+  let graphiteFormed = false;
+
+  // 過飽和判定: lam_C > g0_C(gr) なら graphite が析出
+  if (hasGraphite && result.converged && jC >= 0) {
+    const g0_gr = nasa7_g_over_RT("C(gr)", T_K);
+    if (result.lam[jC] > g0_gr + 1e-8) {
+      // Pass 2: lam_C を g0_gr に pin して再求解
+      const result2 = _solveGasNewton(gasSpecies, aijGas, b, T_K, P_Pa, eosType, gasInlet, g0_gr, jC);
+      if (result2.converged) {
+        let sumC = 0;
+        for (let i = 0; i < gasSpecies.length; i++) sumC += aijGas[i][jC] * result2.n[i];
+        const nG = b[jC] - sumC;
+        if (nG > 0) {
+          result = result2;
+          nGraphite = nG;
+          graphiteFormed = true;
+        }
+      }
+    }
+  }
+
+  // 出力を speciesList の順序に戻す
+  const outletMoles = new Array(speciesList.length).fill(0);
+  for (let k = 0; k < gasIdx.length; k++) outletMoles[gasIdx[k]] = result.n[k];
+  for (const i of solidIdx) {
+    if (speciesList[i] === "C(gr)") outletMoles[i] = nGraphite;
+  }
+
+  const nTotal = outletMoles.reduce((s, v) => s + v, 0);
+  const outletFractions = nTotal > 0 ? outletMoles.map(v => v / nTotal) : outletMoles.slice();
+
+  // phi: 気相種のみ EOS、固体は 1.0 (activity=1)
+  const phi = new Array(speciesList.length).fill(1.0);
+  for (let k = 0; k < gasIdx.length; k++) phi[gasIdx[k]] = result.phi[k];
 
   return {
     species: speciesList,
-    outletMoles: n,
-    outletFractions: yFinal,
-    nTotal: nTotFinal,
-    converged,
-    iterations,
-    Z: finalFug.Z,
-    phi: finalFug.phi,
+    outletMoles,
+    outletFractions,
+    nTotal,
+    converged: result.converged,
+    iterations: result.iterations,
+    Z: result.Z,
+    phi,
     eosType,
+    graphiteFormed,
   };
 }
 
@@ -734,16 +804,16 @@ function applyPreset(name) {
       enable = {H2:2, CO:1, CH3OH:0, H2O:0, CO2:0};
       T = 150; P = 5; Pu = "MPaG"; break;
     case "methanation":
-      enable = {H2:4, CO2:1, CO:0, H2O:0, CH4:0, "C(g)":0};
+      enable = {H2:4, CO2:1, CO:0, H2O:0, CH4:0, "C(gr)":0};
       T = 300; P = 1; Pu = "atm"; break;
     case "reform":
-      enable = {H2:0, CO2:0, CO:0, H2O:3, CH4:1, "C(g)":0};
+      enable = {H2:0, CO2:0, CO:0, H2O:3, CH4:1, "C(gr)":0};
       T = 850; P = 2; Pu = "MPaG"; break;
     case "wgs":
-      enable = {H2:0, CO2:0, CO:1, H2O:1, CH4:0, "C(g)":0};
+      enable = {H2:0, CO2:0, CO:1, H2O:1, CH4:0, "C(gr)":0};
       T = 400; P = 1; Pu = "atm"; break;
     case "ft":
-      enable = {H2:2, CO:1, CO2:0, H2O:0, CH4:0, C2H4:0, C2H6:0, CH3OH:0, CH3CHO:0, "C(g)":0};
+      enable = {H2:2, CO:1, CO2:0, H2O:0, CH4:0, C2H4:0, C2H6:0, CH3OH:0, CH3CHO:0, "C(gr)":0};
       T = 250; P = 2; Pu = "MPa"; break;
   }
   for (const [sp, mol] of Object.entries(enable)) {
