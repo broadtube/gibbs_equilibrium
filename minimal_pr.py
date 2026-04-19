@@ -1,12 +1,16 @@
-"""Minimal Gibbs equilibrium (Peng-Robinson EOS) using Cantera.
+"""Minimal Gibbs equilibrium using Cantera.
+
+EOS selection: pass eos="ideal-gas" | "Peng-Robinson" | "Redlich-Kwong"
+to equilibrate_pr(). Cantera natively supports only these three for
+multi-species gas phases.
 
 Data sources (all Cantera-bundled except H2O critical props):
   - gri30.yaml       : thermo for H2, CO, CO2, H2O, CH4, CH3OH
   - nasa_gas.yaml    : thermo for CH3OCH3 (L12/92, not in gri30)
   - graphite.yaml    : thermo for C(gr) solid
-  - critical-properties.yaml : PR critical params (Tc, Pc, omega) for
-      species that match by name. Uses molecular-formula naming
-      (methanol = CH4O, DME = C2H6O).
+  - critical-properties.yaml : PR/RK critical params (Tc, Pc, omega)
+      for species that match by name. Uses molecular-formula naming
+      (methanol = CH4O, DME = C2H6O). Ignored for ideal-gas.
   - H2O critical params: NIST WebBook / IAPWS-95, hardcoded here since
       critical-properties.yaml does not include water.
 """
@@ -55,15 +59,28 @@ def _cantera_data_path(filename: str) -> str:
     return os.path.join(base, "data", filename)
 
 
-def _build_yaml() -> str:
-    """Assemble a temporary YAML combining thermo + PR critical params.
+VALID_EOS = ("ideal-gas", "Peng-Robinson", "Redlich-Kwong")
+
+
+def _build_yaml(eos: str = "Peng-Robinson") -> str:
+    """Assemble a temporary YAML combining thermo + critical params.
+
+    Parameters
+    ----------
+    eos : one of VALID_EOS. "ideal-gas" omits the equation-of-state
+          and critical-parameters blocks.
 
     Returns the path to the temp file.
     """
-    # 1. Load critical-properties database
-    with open(_cantera_data_path("critical-properties.yaml")) as f:
-        crit_db = {s["name"]: s.get("critical-parameters", {})
-                   for s in yaml.safe_load(f)["species"]}
+    if eos not in VALID_EOS:
+        raise ValueError(f"eos must be one of {VALID_EOS}, got {eos!r}")
+
+    # 1. Load critical-properties database (only needed for non-ideal)
+    crit_db = {}
+    if eos != "ideal-gas":
+        with open(_cantera_data_path("critical-properties.yaml")) as f:
+            crit_db = {s["name"]: s.get("critical-parameters", {})
+                       for s in yaml.safe_load(f)["species"]}
 
     # 2. Load thermo for each species from its source yaml
     species_entries = []
@@ -72,8 +89,8 @@ def _build_yaml() -> str:
             src_doc = yaml.safe_load(f)
         entry = next(s for s in src_doc["species"] if s["name"] == sp)
 
-        # Attach PR critical parameters (gas species only, not graphite)
-        if sp != "C(gr)":
+        # Attach critical parameters for non-ideal EOS (gas species only)
+        if eos != "ideal-gas" and sp != "C(gr)":
             crit = CRIT_OVERRIDE.get(sp) or crit_db.get(CRIT_ALIAS.get(sp, sp))
             if crit is None:
                 raise RuntimeError(f"No critical properties for {sp}")
@@ -82,15 +99,15 @@ def _build_yaml() -> str:
                 "critical-pressure":    crit["critical-pressure"],
                 "acentric-factor":      crit["acentric-factor"],
             }
-            entry["equation-of-state"] = {"model": "Peng-Robinson"}
+            entry["equation-of-state"] = {"model": eos}
         species_entries.append(entry)
 
-    # 3. Build combined YAML doc with two phases: PR gas + solid graphite
+    # 3. Build combined YAML doc with two phases: gas + solid graphite
     doc = {
         "phases": [
             {
                 "name": "gas",
-                "thermo": "Peng-Robinson",
+                "thermo": eos,
                 "elements": ["C", "H", "O"],
                 "species": [sp for sp in THERMO_SOURCE if sp != "C(gr)"],
                 "state": {"T": 300, "P": 101325},
@@ -116,9 +133,13 @@ def equilibrate_pr(
     T_celsius: float,
     P_pascal: float,
     include_graphite: bool = False,
+    eos: str = "Peng-Robinson",
 ) -> dict[str, float]:
-    """Solve Gibbs equilibrium with PR EOS."""
-    path = _build_yaml()
+    """Solve Gibbs equilibrium with selectable EOS.
+
+    eos : "ideal-gas" | "Peng-Robinson" | "Redlich-Kwong"
+    """
+    path = _build_yaml(eos=eos)
     try:
         gas = ct.Solution(path, "gas")
         T_K = T_celsius + 273.15
@@ -166,40 +187,27 @@ def equilibrate_pr(
 
 
 if __name__ == "__main__":
-    # Methanol synthesis: CO + 2 H2 ⇌ CH3OH at 250 °C, 5 MPa
-    print("=== Methanol synthesis: H2:CO = 2:1, 250°C, 5 MPa, PR EOS ===")
-    res = equilibrate_pr(
-        inlet_moles={"H2": 2, "CO": 1, "CO2": 0, "H2O": 0, "CH4": 0, "CH3OH": 0, "CH3OCH3": 0},
-        T_celsius=250,
-        P_pascal=5e6,
-    )
-    print(f"  Z (compressibility) = {res.pop('_Z'):.4f}")
-    total = sum(res.values())
-    for sp, n in res.items():
-        print(f"  {sp:9s} {n:8.5f} mol   ({n/total*100:6.2f} mol%)")
-    print(f"  {'total':9s} {total:8.5f} mol")
+    # EOS comparison: methanol synthesis feed @ 250°C, 5 MPa
+    feed = {"H2": 2, "CO": 1, "CO2": 0, "H2O": 0, "CH4": 0,
+            "CH3OH": 0, "CH3OCH3": 0}
+    print("=== EOS comparison: H2:CO = 2:1, 250°C, 5 MPa ===")
+    for eos in VALID_EOS:
+        res = equilibrate_pr(feed, T_celsius=250, P_pascal=5e6, eos=eos)
+        Z = res.pop("_Z")
+        total = sum(res.values())
+        print(f"\n-- {eos}  (Z = {Z:.4f}) --")
+        for sp, n in res.items():
+            print(f"  {sp:9s} {n:8.5f} mol   ({n/total*100:6.2f} mol%)")
 
-    # DME synthesis: 3 H2 + 3 CO → CH3OCH3 + CO2 (adds DME as product)
-    print("\n=== DME synthesis: H2:CO = 2:1, 200°C, 5 MPa, PR EOS ===")
-    res = equilibrate_pr(
-        inlet_moles={"H2": 2, "CO": 1, "CO2": 0, "H2O": 0, "CH4": 0,
-                     "CH3OH": 0, "CH3OCH3": 0},
-        T_celsius=200,
-        P_pascal=5e6,
-    )
-    print(f"  Z (compressibility) = {res.pop('_Z'):.4f}")
-    total = sum(res.values())
-    for sp, n in res.items():
-        print(f"  {sp:9s} {n:8.5f} mol   ({n/total*100:6.2f} mol%)")
-
-    # Boudouard / coking: 2 CO → C(gr) + CO2 (with graphite solid phase)
-    print("\n=== Boudouard with graphite: CO only, 600°C, 1 atm ===")
+    # Boudouard / coking with graphite solid phase (PR)
+    print("\n=== Boudouard with graphite: CO only, 600°C, 1 atm, PR ===")
     res = equilibrate_pr(
         inlet_moles={"H2": 0, "CO": 1, "CO2": 0, "H2O": 0, "CH4": 0,
                      "CH3OH": 0, "CH3OCH3": 0, "C(gr)": 0},
         T_celsius=600,
         P_pascal=101325,
         include_graphite=True,
+        eos="Peng-Robinson",
     )
     res.pop("_Z", None)
     for sp, n in res.items():
