@@ -22,16 +22,20 @@ import yaml
 import cantera as ct
 
 
-# Species to include, grouped by where thermo comes from
+# Species to include, grouped by where thermo comes from.
+#   "foo.yaml"                     → Cantera-bundled data file
+#   "burcat:<name>:<cas>"          → fetch NASA7 from Burcat (via fetch_thermo.py);
+#                                    critical params come from `chemicals` lib
 THERMO_SOURCE = {
-    "H2":      "gri30.yaml",
-    "CO":      "gri30.yaml",
-    "CO2":     "gri30.yaml",
-    "H2O":     "gri30.yaml",
-    "CH4":     "gri30.yaml",
-    "CH3OH":   "gri30.yaml",
-    "CH3OCH3": "nasa_gas.yaml",
-    "C(gr)":   "graphite.yaml",
+    "H2":        "gri30.yaml",
+    "CO":        "gri30.yaml",
+    "CO2":       "gri30.yaml",
+    "H2O":       "gri30.yaml",
+    "CH4":       "gri30.yaml",
+    "CH3OH":     "gri30.yaml",
+    "CH3OCH3":   "nasa_gas.yaml",
+    "CH3COOCH3": "burcat:Meacetate:79-20-9",
+    "C(gr)":     "graphite.yaml",
 }
 
 # Name aliases for critical-properties.yaml lookup
@@ -82,9 +86,28 @@ def _build_yaml(eos: str = "Peng-Robinson") -> str:
             crit_db = {s["name"]: s.get("critical-parameters", {})
                        for s in yaml.safe_load(f)["species"]}
 
-    # 2. Load thermo for each species from its source yaml
+    # 2. Load thermo for each species from its source (YAML file or Burcat)
     species_entries = []
     for sp, src in THERMO_SOURCE.items():
+        if src.startswith("burcat:"):
+            # Fetch NASA7 from Burcat + Tc/Pc/omega from chemicals lib
+            from fetch_thermo import fetch_species
+            _, burcat_name, cas = src.split(":")
+            sp_data = fetch_species(
+                burcat_name,
+                cas=(cas if eos != "ideal-gas" else None),
+                display_name=sp,
+            )
+            entry = yaml.safe_load(sp_data.cantera_yaml_entry())[0]
+            if eos == "ideal-gas":
+                entry.pop("critical-parameters", None)
+                entry.pop("equation-of-state", None)
+            elif eos != "Peng-Robinson":
+                entry["equation-of-state"] = {"model": eos}
+            species_entries.append(entry)
+            continue
+
+        # Otherwise: Cantera-bundled YAML
         with open(_cantera_data_path(src)) as f:
             src_doc = yaml.safe_load(f)
         entry = next(s for s in src_doc["species"] if s["name"] == sp)
@@ -188,8 +211,9 @@ def equilibrate_pr(
 
 if __name__ == "__main__":
     # EOS comparison: methanol synthesis feed @ 250°C, 5 MPa
+    # (CH3COOCH3 included via Burcat fetch — demonstrates external thermo source)
     feed = {"H2": 2, "CO": 1, "CO2": 0, "H2O": 0, "CH4": 0,
-            "CH3OH": 0, "CH3OCH3": 0}
+            "CH3OH": 0, "CH3OCH3": 0, "CH3COOCH3": 0}
     print("=== EOS comparison: H2:CO = 2:1, 250°C, 5 MPa ===")
     for eos in VALID_EOS:
         res = equilibrate_pr(feed, T_celsius=250, P_pascal=5e6, eos=eos)
@@ -203,7 +227,7 @@ if __name__ == "__main__":
     print("\n=== Boudouard with graphite: CO only, 600°C, 1 atm, PR ===")
     res = equilibrate_pr(
         inlet_moles={"H2": 0, "CO": 1, "CO2": 0, "H2O": 0, "CH4": 0,
-                     "CH3OH": 0, "CH3OCH3": 0, "C(gr)": 0},
+                     "CH3OH": 0, "CH3OCH3": 0, "CH3COOCH3": 0, "C(gr)": 0},
         T_celsius=600,
         P_pascal=101325,
         include_graphite=True,
